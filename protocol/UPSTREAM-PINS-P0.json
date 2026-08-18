@@ -1,0 +1,37 @@
+{
+  "swebench": {
+    "repo": "references/SWE-bench",
+    "commit": "87ab1f6ced28f75ba73ca899dc759b019310944a",
+    "pinned_capabilities": [
+      "run_instance",
+      "skip_patch",
+      "get_eval_report",
+      "tests_status",
+      "FAIL_TO_PASS",
+      "PASS_TO_PASS",
+      "reporting",
+      "grading",
+      "log_parsers",
+      "infra_failure_classification"
+    ]
+  },
+  "attestation": {
+    "repo": "references/attestation",
+    "pinned_capabilities": [
+      "Statement",
+      "subject",
+      "predicate",
+      "provenance"
+    ]
+  },
+  "witness": {
+    "repo": "references/witness",
+    "pinned_capabilities": [
+      "attestation_creation",
+      "verification",
+      "policy_validation",
+      "provenance"
+    ]
+  }
+}
+
