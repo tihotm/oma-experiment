@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oma7/policy.schema.json",
+  "title": "OMA7 Governance Policy Document",
+  "type": "object",
+  "required": [],
+  "properties": {
+    "evidence_levels": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "promotion_rules": { "type": "object" },
+    "real_execution_counters": { "type": "object" },
+    "measured_product_effect": {
+      "type": "string",
+      "enum": ["NO", "YES"]
+    },
+    "ablation_stage_authorization": { "type": "object" },
+    "schema_version": { "type": ["string", "null"] },
+    "required_identities": { "type": "array", "items": { "type": "string" } },
+    "acceptance": { "type": "object" },
+    "forward_fields": { "type": "array", "items": { "type": "string" } },
+    "semantic_protected_roles": { "type": "array", "items": { "type": "string" } },
+    "unknown_sensitive_role_behavior": { "type": "string" },
+    "default_unknown_behavior": { "type": "string" },
+    "path_policy": { "type": "object" }
+  },
+  "additionalProperties": true
+}
+

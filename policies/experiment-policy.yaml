@@ -1,0 +1,28 @@
+{
+  "evidence_levels": ["DOCUMENTED", "CODE_CONFIRMED", "TEST_CONFIRMED", "EXECUTED", "MEASURED"],
+  "promotion_rules": {
+    "TEST_CONFIRMED_to_EXECUTED": false,
+    "requires_real_execution_for_EXECUTED": true,
+    "requires_causal_evidence_for_MEASURED": true
+  },
+  "real_execution_counters": {
+    "REAL_CODEX_EXEC": 0,
+    "REAL_CONTAINER_G0": 0,
+    "REAL_A1": 0,
+    "REAL_QUALIFIED_PAIRS": 0
+  },
+  "measured_product_effect": "NO",
+  "ablation_stage_authorization": {
+    "E0": true,
+    "E1": true,
+    "E1b": true,
+    "E2": false,
+    "E3": false,
+    "E4": false,
+    "E5": false,
+    "E6": false,
+    "E7": false,
+    "E8": false
+  }
+}
+

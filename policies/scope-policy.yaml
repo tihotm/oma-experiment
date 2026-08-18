@@ -1,0 +1,19 @@
+{
+  "schema_version": "oma7.scope-policy/v1",
+  "semantic_protected_roles": [
+    "hidden_oracle",
+    "evaluator",
+    "verification_gate"
+  ],
+  "unknown_sensitive_role_behavior": "REVIEW",
+  "default_unknown_behavior": "BLOCK",
+  "path_policy": {
+    "mode": "BLOCK",
+    "protected_paths": [
+      "docs/**",
+      "policies/**",
+      "schemas/**"
+    ]
+  }
+}
+

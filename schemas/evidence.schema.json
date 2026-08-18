@@ -1,0 +1,154 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "oma7/evidence.schema.json",
+  "title": "OMA7 Evidence",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "subject_identity",
+    "materialization_identity",
+    "execution_context_identity",
+    "verification_context_identity",
+    "scope_policy_identity",
+    "provenance_anchor_identity",
+    "result"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "oma7.evidence/v1"
+    },
+    "result": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "ERROR", "SKIP", "NOT_RUN", "UNKNOWN"]
+    },
+    "subject_identity": { "$ref": "#/$defs/subjectIdentity" },
+    "materialization_identity": { "$ref": "#/$defs/materializationIdentity" },
+    "execution_context_identity": { "$ref": "#/$defs/executionContextIdentity" },
+    "verification_context_identity": { "$ref": "#/$defs/verificationContextIdentity" },
+    "scope_policy_identity": { "$ref": "#/$defs/scopePolicyIdentity" },
+    "provenance_anchor_identity": { "$ref": "#/$defs/provenanceAnchorIdentity" },
+    "verifier_id": { "type": ["string", "null"] },
+    "run_id": { "type": ["string", "null"] },
+    "cost_ledger_head": { "type": ["string", "null"] },
+    "cost_ledger_event_count": { "type": ["integer", "null"] },
+    "human_intervention_summary": { "type": ["string", "null"] },
+    "predicate": { "type": "object" }
+  },
+  "$defs": {
+    "subjectIdentity": {
+      "type": "object",
+      "required": ["git_tree", "schema_version"],
+      "properties": {
+        "git_tree": { "type": "string", "minLength": 1 },
+        "git_commit": { "type": ["string", "null"] },
+        "path": { "type": "string" },
+        "schema_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "materializationIdentity": {
+      "type": "object",
+      "required": ["subject_identity", "canonical_root_descriptor", "schema_version"],
+      "properties": {
+        "subject_identity": { "$ref": "#/$defs/subjectIdentity" },
+        "canonical_root_descriptor": { "type": "string", "minLength": 1 },
+        "symlink_topology": { "type": "array" },
+        "hardlink_topology": { "type": "array" },
+        "worktree_reference_identity": { "type": ["string", "null"] },
+        "mounted_reference_artifact_identities": { "type": "array" },
+        "cache_manifest_digest": { "type": ["string", "null"] },
+        "schema_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "executionContextIdentity": {
+      "type": "object",
+      "required": [
+        "environment_container_image_digest",
+        "codex_binary_digest",
+        "codex_version",
+        "model",
+        "reasoning_level",
+        "harness_commit_or_digest",
+        "harness_configuration_digest",
+        "dependency_lock_digest",
+        "dataset_revision",
+        "toolchain_identity",
+        "schema_version"
+      ],
+      "properties": {
+        "environment_container_image_digest": { "type": "string", "minLength": 1 },
+        "codex_binary_digest": { "type": "string", "minLength": 1 },
+        "codex_version": { "type": "string", "minLength": 1 },
+        "model": { "type": "string", "minLength": 1 },
+        "reasoning_level": { "type": "string", "minLength": 1 },
+        "harness_commit_or_digest": { "type": "string", "minLength": 1 },
+        "harness_configuration_digest": { "type": "string", "minLength": 1 },
+        "dependency_lock_digest": { "type": "string", "minLength": 1 },
+        "dataset_revision": { "type": "string", "minLength": 1 },
+        "toolchain_identity": { "type": "string", "minLength": 1 },
+        "schema_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "verificationContextIdentity": {
+      "type": "object",
+      "required": [
+        "dataset_revision",
+        "oracle_test_patch_identity",
+        "fail_to_pass",
+        "pass_to_pass",
+        "harness_commit_or_digest",
+        "verification_configuration_digest",
+        "schema_version"
+      ],
+      "properties": {
+        "dataset_revision": { "type": "string", "minLength": 1 },
+        "oracle_test_patch_identity": { "type": "string", "minLength": 1 },
+        "fail_to_pass": { "type": "array", "items": { "type": "string" } },
+        "pass_to_pass": { "type": "array", "items": { "type": "string" } },
+        "harness_commit_or_digest": { "type": "string", "minLength": 1 },
+        "verification_configuration_digest": { "type": "string", "minLength": 1 },
+        "verifier_environment_image_digest": { "type": ["string", "null"] },
+        "verifier_identity": { "type": ["string", "null"] },
+        "schema_version": { "type": "string" }
+      },
+      "additionalProperties": false
+    },
+    "scopePolicyIdentity": {
+      "type": "object",
+      "required": [
+        "allowed_scope_path_policy",
+        "protected_semantic_roles",
+        "explicit_sensitive_change_authorizations",
+        "scope_budget",
+        "task_specific_exceptions",
+        "rule_schema_version"
+      ],
+      "properties": {
+        "allowed_scope_path_policy": { "type": "array", "items": { "type": "string" } },
+        "protected_semantic_roles": { "type": "array", "items": { "type": "string" } },
+        "explicit_sensitive_change_authorizations": { "type": "array", "items": { "type": "string" } },
+        "scope_budget": { "type": "string", "minLength": 1 },
+        "task_specific_exceptions": { "type": "array", "items": { "type": "string" } },
+        "rule_schema_version": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": false
+    },
+    "provenanceAnchorIdentity": {
+      "type": "object",
+      "required": ["anchor_type", "immutable_anchor_identifier_digest", "provenance_root"],
+      "properties": {
+        "anchor_type": { "type": "string", "minLength": 1 },
+        "immutable_anchor_identifier_digest": { "type": "string", "minLength": 1 },
+        "provenance_root": { "type": "string", "minLength": 1 },
+        "event_count": { "type": ["integer", "null"] },
+        "schema_information": { "type": ["string", "null"] }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}
+

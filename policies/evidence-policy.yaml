@@ -1,0 +1,25 @@
+{
+  "schema_version": "oma7.evidence-policy/v1",
+  "required_identities": [
+    "subject_identity",
+    "materialization_identity",
+    "execution_context_identity",
+    "verification_context_identity",
+    "scope_policy_identity",
+    "provenance_anchor_identity"
+  ],
+  "acceptance": {
+    "result": "PASS",
+    "required_identities_present": true,
+    "required_identities_match_expected_values": true,
+    "unsupported_or_unknown_mandatory_values": "FAIL_CLOSED"
+  },
+  "forward_fields": [
+    "verifier_id",
+    "run_id",
+    "cost_ledger_head",
+    "cost_ledger_event_count",
+    "human_intervention_summary"
+  ]
+}
+
