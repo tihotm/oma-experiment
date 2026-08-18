@@ -13,7 +13,7 @@
 1. Codex sandbox preflight
 1. first real G0
 
-Identity/evidence foundation is complete only to the extent supported by current code/tests at HEAD `4e94009`.
+Identity/evidence foundation is complete only to the extent supported by current code/tests at HEAD `8130ac1`.
 
 ## Experimental ablation roadmap
 
@@ -36,4 +36,3 @@ Engineering availability does not justify causal experimental promotion.
 - experiment execution - `DEFERRED_PENDING_WORKFLOW_STABILITY`
 - evidence verification - `DEFERRED_PENDING_WORKFLOW_STABILITY`
 - lot closure - `DEFERRED_PENDING_WORKFLOW_STABILITY`
-

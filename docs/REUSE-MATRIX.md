@@ -19,3 +19,6 @@
 | Verification context | OMA7 + SWE-bench | verification inputs | COMPOSE | canonical identity model | Existing benchmark facts are adapted into a dedicated context identity |
 | Scope policy | OMA7 | canonical scope policy identity | BUILD | identity model | No donor provides the required policy binding shape |
 | Provenance anchor | OMA7 + in-toto/Witness | binding abstraction only | REFERENCE | interface only | Prepared for future composition without inventing custom attestations |
+| Lifecycle state machine | OMA7 | explicit supervisor-owned lifecycle boundaries | BUILD | lifecycle model | No donor in-repo provides the required acceptance/failure state boundaries |
+| Acceptance gate | OMA7 | central fail-closed decision function | BUILD | decision gate | Existing pieces were split across modules and needed one authoritative gate |
+| Atomic evidence publication | Python/OS primitives | tempfile/replace/fsync | COMPOSE | publication helper | Atomicity comes from standard filesystem primitives, not a new OMA7 mechanism |

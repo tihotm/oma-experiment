@@ -12,6 +12,16 @@ from .models import (
     SubjectIdentity,
     VerificationContextIdentity,
 )
+from .lifecycle import (
+    AcceptanceDecision,
+    AcceptanceOutcome,
+    AtomicEvidencePublicationResult,
+    ControlledLifecycleObservation,
+    GateStatus,
+    LifecycleState,
+    evaluate_acceptance,
+    publish_atomic_evidence,
+)
 from .qualifier import qualify_observation
 from .snapshot import freeze_snapshot
 from .swebench_adapter import normalize_b0_observation

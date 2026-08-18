@@ -10,6 +10,16 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from oma7.git_identity import compute_git_tree_identity
+from oma7.lifecycle import (
+    AcceptanceOutcome,
+    AtomicEvidencePublicationResult,
+    ControlledLifecycleObservation,
+    GateStatus,
+    LifecycleState,
+    load_published_evidence,
+    evaluate_acceptance,
+    publish_atomic_evidence,
+)
 from oma7.models import (
     Evidence,
     ExecutionContextIdentity,
@@ -117,6 +127,28 @@ class Oma7CoreTests(unittest.TestCase):
         )
         base.update(overrides)
         return Evidence(**base)
+
+    def observation(self, **overrides) -> ControlledLifecycleObservation:
+        base = dict(
+            executor_state=LifecycleState.FROZEN,
+            lifecycle_state=LifecycleState.VERIFICATION_PENDING,
+            verifier_result=ResultStatus.PASS,
+            evidence=self.evidence(),
+            subject_identity=self.subject(),
+            materialization_identity=self.materialization(),
+            execution_context_identity=self.execution(),
+            verification_context_identity=self.verification(),
+            scope_policy_identity=self.scope_policy(),
+            provenance_anchor_identity=self.provenance(),
+            quiescence_status=GateStatus.PASS_,
+            freeze_status=GateStatus.PASS_,
+            integrity_status=GateStatus.PASS_,
+            no_op_precheck_status=GateStatus.NOT_IMPLEMENTED,
+            no_op_expected_unchanged=None,
+            metadata={},
+        )
+        base.update(overrides)
+        return ControlledLifecycleObservation(**base)
 
     def test_git_identity_changes_on_content_mutation(self) -> None:
         base = compute_git_tree_identity(self.repo)
@@ -376,6 +408,207 @@ class Oma7CoreTests(unittest.TestCase):
             effective_model_patch({"model_patch": "diff --git a b"}, skip_patch=False),
             "diff --git a b",
         )
+
+    def test_false_done_final_message_only_rejects(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(
+                evidence=None,
+                verifier_result=ResultStatus.PASS,
+                lifecycle_state=LifecycleState.EXECUTOR_TERMINATED,
+                executor_state=LifecycleState.EXECUTOR_TERMINATED,
+            )
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_false_done_exit_zero_only_rejects(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(
+                evidence=None,
+                lifecycle_state=LifecycleState.EXECUTOR_TERMINATED,
+                executor_state=LifecycleState.EXECUTOR_TERMINATED,
+            )
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_false_done_terminal_executor_event_only_rejects(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(
+                evidence=None,
+                lifecycle_state=LifecycleState.EXECUTOR_TERMINATED,
+                executor_state=LifecycleState.EXECUTOR_TERMINATED,
+            )
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_false_done_verifier_pass_stale_evidence_rejects(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(
+                evidence=self.evidence(
+                    subject_identity=self.subject(),
+                    materialization_identity=self.materialization(
+                        subject=SubjectIdentity(git_tree="tree-x", git_commit="commit", path=".")
+                    ),
+                )
+            )
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_false_done_unsupported_schema_rejects(self) -> None:
+        decision = evaluate_acceptance(self.observation(evidence=self.evidence(schema_version="oma7.evidence/v9")))
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_false_done_missing_required_identity_rejects(self) -> None:
+        decision = evaluate_acceptance(self.observation(subject_identity=None))
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_false_done_unknown_gate_rejects(self) -> None:
+        decision = evaluate_acceptance(self.observation(quiescence_status=GateStatus.UNKNOWN))
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_false_done_applicable_pass_evidence_accepts(self) -> None:
+        decision = evaluate_acceptance(self.observation())
+        self.assertEqual(decision.outcome, AcceptanceOutcome.EVAL_DONE)
+
+    def test_noop_claim_without_positive_verification_rejects(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(
+                no_op_precheck_status=GateStatus.PASS_,
+                no_op_expected_unchanged=None,
+            )
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_verified_legitimate_noop_accepts(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(
+                no_op_precheck_status=GateStatus.PASS_,
+                no_op_expected_unchanged=True,
+            )
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NO_OP)
+
+    def test_noop_unexpected_mutation_rejects_review(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(
+                no_op_precheck_status=GateStatus.PASS_,
+                no_op_expected_unchanged=False,
+            )
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+        self.assertEqual(decision.lifecycle_state, LifecycleState.REVIEW_REQUIRED)
+
+    def test_timeout_candidate_patch_not_done(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(
+                lifecycle_state=LifecycleState.RETRY_REQUIRED,
+                executor_state=LifecycleState.EXECUTOR_TERMINATED,
+            )
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_timeout_previous_pass_evidence_not_applicable_not_done(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(
+                evidence=self.evidence(
+                    subject_identity=self.subject(),
+                    materialization_identity=self.materialization(
+                        subject=SubjectIdentity(git_tree="tree-z", git_commit="commit", path=".")
+                    ),
+                )
+            )
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_recovered_subject_fresh_applicable_evidence_may_complete(self) -> None:
+        decision = evaluate_acceptance(self.observation())
+        self.assertEqual(decision.lifecycle_state, LifecycleState.EVAL_DONE)
+
+    def test_retry_required_executor_message_stays_retry(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(lifecycle_state=LifecycleState.RETRY_REQUIRED)
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+        self.assertEqual(decision.lifecycle_state, LifecycleState.RETRY_REQUIRED)
+
+    def test_review_required_metadata_only_update_stays_review(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(lifecycle_state=LifecycleState.REVIEW_REQUIRED)
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+        self.assertEqual(decision.lifecycle_state, LifecycleState.REVIEW_REQUIRED)
+
+    def test_blocked_policy_resolution_only_not_done(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(lifecycle_state=LifecycleState.BLOCKED)
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_blocked_resolution_and_fresh_evidence_may_complete(self) -> None:
+        decision = evaluate_acceptance(self.observation())
+        self.assertEqual(decision.outcome, AcceptanceOutcome.EVAL_DONE)
+
+    def test_missing_mandatory_observation_fails_closed(self) -> None:
+        decision = evaluate_acceptance(self.observation(quiescence_status=GateStatus.NOT_IMPLEMENTED))
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_unknown_enum_fails_closed(self) -> None:
+        decision = evaluate_acceptance(self.observation(quiescence_status=GateStatus.UNKNOWN))
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_integrity_inspection_error_fails_closed(self) -> None:
+        decision = evaluate_acceptance(self.observation(integrity_status=GateStatus.FAIL))
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_atomic_publication_temp_only_unpublished(self) -> None:
+        target = self.repo / "evidence.json"
+        result = publish_atomic_evidence(target, {"a": 1})
+        self.assertTrue(result.published)
+        self.assertTrue(target.exists())
+
+    def test_atomic_publication_truncated_invalid(self) -> None:
+        target = self.repo / "truncated.json"
+        target.write_text("{", encoding="utf-8")
+        self.assertIsNone(load_published_evidence(target))
+
+    def test_atomic_publication_identical_replay_idempotent(self) -> None:
+        target = self.repo / "replay.json"
+        first = publish_atomic_evidence(target, {"x": 1})
+        second = publish_atomic_evidence(target, {"x": 1})
+        self.assertTrue(first.published)
+        self.assertTrue(second.published)
+        self.assertFalse(second.conflict)
+
+    def test_atomic_publication_conflicting_replay_conflict(self) -> None:
+        target = self.repo / "conflict.json"
+        first = publish_atomic_evidence(target, {"x": 1})
+        second = publish_atomic_evidence(target, {"x": 2})
+        self.assertTrue(first.published)
+        self.assertTrue(second.conflict)
+
+    def test_evidence_published_done_missing_resumable(self) -> None:
+        target = self.repo / "resume.json"
+        result = publish_atomic_evidence(target, {"x": 1})
+        self.assertTrue(result.published)
+        self.assertTrue(target.exists())
+        self.assertEqual(load_published_evidence(target), {"x": 1})
+
+    def test_done_present_evidence_missing_invalid_terminal(self) -> None:
+        self.assertFalse((self.repo / "missing.json").exists())
+
+    def test_evidence_identity_mismatch_on_resume_not_done(self) -> None:
+        decision = evaluate_acceptance(
+            self.observation(
+                evidence=self.evidence(subject_identity=SubjectIdentity(git_tree="other", git_commit="commit", path=".")),
+            )
+        )
+        self.assertEqual(decision.outcome, AcceptanceOutcome.NOT_ACCEPTED)
+
+    def test_atomic_publication_succeeds_and_applicable_evidence_validates(self) -> None:
+        target = self.repo / "final.json"
+        result = publish_atomic_evidence(target, {"run_id": "1", "result": "PASS"})
+        self.assertTrue(result.published)
+        self.assertTrue(target.exists())
+
 
 
 if __name__ == "__main__":

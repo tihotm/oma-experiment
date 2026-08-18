@@ -421,3 +421,12 @@ Evidence labels:
 - `CODE_CONFIRMED` for the new identity/evidence foundation
 - `TEST_CONFIRMED` for the unit tests added in this lot
 - `EXECUTED` remains prohibited for the scientific contract
+
+## Lot 4 lifecycle update
+
+This lot adds a supervisor-owned lifecycle model, a single fail-closed
+acceptance gate, legitimate no-op decision support, and atomic evidence
+publication primitives.
+
+It does not implement runtime quiescence, oracle isolation, recovery
+or concurrency supervision.

@@ -241,7 +241,7 @@ I29
 - Current evidence level: TEST_CONFIRMED
 - Implementation status: IMPLEMENTED
 - Runtime confirmation status: YES
-- Related implementation/tests if known: tests/test_oma7_core.py
+- Related implementation/tests if known: tests/test_oma7_core.py, src/oma7/lifecycle.py
 
 I30
 - Statement: Provenance anchor mutation invalidates acceptance evidence.
@@ -602,4 +602,3 @@ I74
 - Implementation status: IMPLEMENTED
 - Runtime confirmation status: NOT_REQUIRED
 - Related implementation/tests if known: docs/ROADMAP.md, docs/CURRENT-STATE.md
-
