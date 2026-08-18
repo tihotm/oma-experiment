@@ -391,3 +391,33 @@ provenance anchors, or concurrency semantics.
 
 The current code should be preserved as baseline evidence, not redesigned away.
 
+## Lot 3 convergence update
+
+Current code and tests now confirm the following requirements in code:
+
+- `SubjectIdentity`
+- `MaterializationIdentity`
+- `ExecutionContextIdentity`
+- `VerificationContextIdentity`
+- `ScopePolicyIdentity`
+- `ProvenanceAnchorIdentity`
+- expanded `Evidence`
+- canonical identity hashing
+- schema fail-closed parsing
+
+The following remain intentionally out of scope for this lot:
+
+- executor quiescence
+- hidden oracle temporal isolation
+- atomic publication
+- cost ledger
+- human intervention accounting
+- concurrency lease/fencing/CAS
+- recovery engine
+- external-effect idempotency
+
+Evidence labels:
+
+- `CODE_CONFIRMED` for the new identity/evidence foundation
+- `TEST_CONFIRMED` for the unit tests added in this lot
+- `EXECUTED` remains prohibited for the scientific contract
