@@ -49,3 +49,15 @@ It requires:
 `RETRY_REQUIRED`, `REVIEW_REQUIRED`, and `BLOCKED` remain non-accepted until a
 new material fact supports re-evaluation.
 
+## Durable finalization
+
+Durable finalization uses a filesystem-backed run record plus published
+evidence.
+
+Crash-resume classification is fail-closed:
+
+- missing or truncated run record => invalid or resumable only when current evidence is valid
+- `DONE` without evidence => invalid terminal state
+- evidence identity mismatch => conflict or invalid terminal state
+- valid evidence with no persisted terminal state => resumable finalization
+

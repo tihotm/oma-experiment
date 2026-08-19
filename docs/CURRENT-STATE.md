@@ -1,6 +1,6 @@
 # Current State
 
-HEAD = `8130ac1`
+HEAD = `1398771a77f0a8f98467b9b49063c9536d5034b3`
 
 Scientific state:
 
@@ -22,7 +22,7 @@ Current canonical test command:
 
 Current discovered test count:
 
-- before governance tests: 15
-- after governance tests: 23
+- before governance tests: 24
+- after governance tests: 61
 
 This file records factual state only.

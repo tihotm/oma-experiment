@@ -430,3 +430,11 @@ publication primitives.
 
 It does not implement runtime quiescence, oracle isolation, recovery
 or concurrency supervision.
+
+## Lot 4.1 durability update
+
+This lot adds a filesystem-backed durable run record and crash-resume
+classification for finalization.
+
+It closes the acceptance-persistence boundary only. It does not add a
+recovery engine, executor quiescence, or distributed supervision.

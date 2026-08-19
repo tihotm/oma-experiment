@@ -3,6 +3,7 @@ from __future__ import annotations
 import subprocess
 import tempfile
 import unittest
+import json
 from pathlib import Path
 import sys
 
@@ -16,9 +17,16 @@ from oma7.lifecycle import (
     ControlledLifecycleObservation,
     GateStatus,
     LifecycleState,
+    ResumeClassification,
+    RunIdentity,
+    DurableRunRecord,
+    evidence_publication_payload,
+    load_durable_run_record,
     load_published_evidence,
     evaluate_acceptance,
+    finalize_durable_done,
     publish_atomic_evidence,
+    write_durable_run_record,
 )
 from oma7.models import (
     Evidence,
@@ -149,6 +157,19 @@ class Oma7CoreTests(unittest.TestCase):
         )
         base.update(overrides)
         return ControlledLifecycleObservation(**base)
+
+    def run_identity(self) -> RunIdentity:
+        return RunIdentity(
+            instance_id="instance-1",
+            phase="phase-1",
+            replicate="replicate-1",
+            subject_identity=self.subject(),
+            materialization_identity=self.materialization(),
+            execution_context_identity=self.execution(),
+            verification_context_identity=self.verification(),
+            scope_policy_identity=self.scope_policy(),
+            provenance_anchor_identity=self.provenance(),
+        )
 
     def test_git_identity_changes_on_content_mutation(self) -> None:
         base = compute_git_tree_identity(self.repo)
@@ -608,6 +629,138 @@ class Oma7CoreTests(unittest.TestCase):
         result = publish_atomic_evidence(target, {"run_id": "1", "result": "PASS"})
         self.assertTrue(result.published)
         self.assertTrue(target.exists())
+
+    def test_durable_run_record_writes_and_loads(self) -> None:
+        path = self.repo / "run.json"
+        record = DurableRunRecord(
+            schema_version="oma7.run-record/v1",
+            run_identity=self.run_identity(),
+            lifecycle_state=LifecycleState.VERIFICATION_PENDING,
+            evidence_reference="evidence.json",
+            evidence_identity="abc123",
+            durability={
+                "file_fsync_performed": True,
+                "directory_fsync_performed": False,
+                "atomic_replace_used": True,
+            },
+        )
+        result = write_durable_run_record(path, record)
+        self.assertTrue(result.atomic_replace_used)
+        loaded = load_durable_run_record(path)
+        self.assertIsNotNone(loaded)
+        self.assertEqual(loaded["schema_version"], "oma7.run-record/v1")
+        self.assertEqual(loaded["lifecycle_state"], "VERIFICATION_PENDING")
+
+    def test_crash_before_evidence_temp_write_not_done(self) -> None:
+        run_record_path = self.repo / "run.json"
+        self.assertEqual(
+            finalize_durable_done(run_record_path, self.repo / "evidence.json", self.run_identity(), self.observation()),
+            ResumeClassification.INVALID,
+        )
+
+    def test_crash_after_temp_write_before_replace_not_done(self) -> None:
+        run_record_path = self.repo / "run.json"
+        evidence_path = self.repo / "evidence.json.tmp"
+        evidence_path.write_text("{", encoding="utf-8")
+        self.assertEqual(
+            finalize_durable_done(run_record_path, evidence_path, self.run_identity(), self.observation()),
+            ResumeClassification.INVALID,
+        )
+
+    def test_evidence_published_without_terminal_is_resumable(self) -> None:
+        run_record_path = self.repo / "run.json"
+        evidence_path = self.repo / "evidence.json"
+        publish_atomic_evidence(evidence_path, evidence_publication_payload(self.evidence()))
+        self.assertEqual(
+            finalize_durable_done(run_record_path, evidence_path, self.run_identity(), self.observation()),
+            ResumeClassification.DONE,
+        )
+
+    def test_done_present_evidence_missing_invalid(self) -> None:
+        run_record_path = self.repo / "run.json"
+        write_durable_run_record(
+            run_record_path,
+            DurableRunRecord(
+                schema_version="oma7.run-record/v1",
+                run_identity=self.run_identity(),
+                lifecycle_state=LifecycleState.EVAL_DONE,
+                evidence_reference="evidence.json",
+                evidence_identity="abc123",
+                durability={
+                    "file_fsync_performed": True,
+                    "directory_fsync_performed": False,
+                    "atomic_replace_used": True,
+                },
+            ),
+        )
+        self.assertEqual(
+            finalize_durable_done(run_record_path, self.repo / "missing.json", self.run_identity(), self.observation()),
+            ResumeClassification.INVALID,
+        )
+
+    def test_done_present_malformed_evidence_invalid(self) -> None:
+        run_record_path = self.repo / "run.json"
+        write_durable_run_record(
+            run_record_path,
+            DurableRunRecord(
+                schema_version="oma7.run-record/v1",
+                run_identity=self.run_identity(),
+                lifecycle_state=LifecycleState.EVAL_DONE,
+                evidence_reference="evidence.json",
+                evidence_identity="abc123",
+                durability={
+                    "file_fsync_performed": True,
+                    "directory_fsync_performed": False,
+                    "atomic_replace_used": True,
+                },
+            ),
+        )
+        evidence_path = self.repo / "evidence.json"
+        evidence_path.write_text("{", encoding="utf-8")
+        self.assertEqual(
+            finalize_durable_done(run_record_path, evidence_path, self.run_identity(), self.observation()),
+            ResumeClassification.INVALID,
+        )
+
+    def test_done_present_identity_mismatch_invalid(self) -> None:
+        run_record_path = self.repo / "run.json"
+        evidence_path = self.repo / "evidence.json"
+        publish_atomic_evidence(evidence_path, {"schema_version": "oma7.evidence/v1", "a": 1})
+        write_durable_run_record(
+            run_record_path,
+            DurableRunRecord(
+                schema_version="oma7.run-record/v1",
+                run_identity=self.run_identity(),
+                lifecycle_state=LifecycleState.EVAL_DONE,
+                evidence_reference="evidence.json",
+                evidence_identity="different",
+                durability={
+                    "file_fsync_performed": True,
+                    "directory_fsync_performed": False,
+                    "atomic_replace_used": True,
+                },
+            ),
+        )
+        self.assertEqual(
+            finalize_durable_done(run_record_path, evidence_path, self.run_identity(), self.observation()),
+            ResumeClassification.INVALID,
+        )
+
+    def test_unsupported_run_record_schema_fails_closed(self) -> None:
+        path = self.repo / "run.json"
+        path.write_text(json.dumps({"schema_version": "oma7.run-record/v9"}), encoding="utf-8")
+        self.assertIsNone(load_durable_run_record(path))
+
+    def test_valid_evidence_and_pending_lifecycle_finalize_idempotently(self) -> None:
+        run_record_path = self.repo / "run.json"
+        evidence_path = self.repo / "evidence.json"
+        evidence = self.evidence()
+        publish_atomic_evidence(evidence_path, evidence_publication_payload(evidence))
+        self.assertEqual(
+            finalize_durable_done(run_record_path, evidence_path, self.run_identity(), self.observation()),
+            ResumeClassification.DONE,
+        )
+
 
 
 

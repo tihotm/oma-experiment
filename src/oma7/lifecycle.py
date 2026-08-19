@@ -1,7 +1,8 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields, is_dataclass
 from enum import Enum
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -207,8 +208,37 @@ def lifecycle_state_from_decision(decision: AcceptanceDecision) -> LifecycleStat
     return decision.lifecycle_state
 
 
-def _deterministic_json(data: dict[str, Any]) -> str:
-    return json.dumps(data, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+def _deterministic_json(data: dict[str, Any], *, omit_none: bool = False) -> str:
+    def _normalize(value: Any, omit_none: bool = False) -> Any:
+        if value is None:
+            return None
+        if isinstance(value, Enum):
+            return value.value
+        if isinstance(value, (str, int, float, bool)):
+            return value
+        if isinstance(value, tuple):
+            return [_normalize(item, omit_none=omit_none) for item in value]
+        if isinstance(value, list):
+            return [_normalize(item, omit_none=omit_none) for item in value]
+        if isinstance(value, dict):
+            result = {}
+            for key in sorted(value):
+                item = value[key]
+                if omit_none and item is None:
+                    continue
+                result[str(key)] = _normalize(item, omit_none=omit_none)
+            return result
+        if is_dataclass(value):
+            result = {}
+            for f in fields(value):
+                field_value = getattr(value, f.name)
+                if omit_none and field_value is None:
+                    continue
+                result[f.name] = _normalize(field_value, omit_none=omit_none)
+            return result
+        raise TypeError(f"Unsupported canonical value: {type(value)!r}")
+
+    return json.dumps(_normalize(data, omit_none=omit_none), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
 
 
 @dataclass(frozen=True)
@@ -267,3 +297,260 @@ def load_published_evidence(path: str | Path) -> dict[str, Any] | None:
     if not isinstance(payload, dict):
         return None
     return payload
+
+
+@dataclass(frozen=True)
+class RunIdentity:
+    instance_id: str
+    phase: str
+    replicate: str
+    subject_identity: SubjectIdentity
+    materialization_identity: MaterializationIdentity
+    execution_context_identity: ExecutionContextIdentity
+    verification_context_identity: VerificationContextIdentity
+    scope_policy_identity: ScopePolicyIdentity
+    provenance_anchor_identity: ProvenanceAnchorIdentity
+
+    def identity(self) -> str:
+        payload = {
+            "execution_context_identity": self.execution_context_identity,
+            "instance_id": self.instance_id,
+            "materialization_identity": self.materialization_identity,
+            "phase": self.phase,
+            "provenance_anchor_identity": self.provenance_anchor_identity,
+            "replicate": self.replicate,
+            "scope_policy_identity": self.scope_policy_identity,
+            "subject_identity": self.subject_identity,
+            "verification_context_identity": self.verification_context_identity,
+        }
+        return sha256(_deterministic_json(payload).encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class DurableRunRecord:
+    schema_version: str
+    run_identity: RunIdentity
+    lifecycle_state: LifecycleState
+    evidence_reference: str | None
+    evidence_identity: str | None
+    durability: dict[str, bool]
+
+    def identity(self) -> str:
+        payload = {
+            "durability": self.durability,
+            "evidence_identity": self.evidence_identity,
+            "evidence_reference": self.evidence_reference,
+            "lifecycle_state": self.lifecycle_state,
+            "run_identity": self.run_identity.identity(),
+            "schema_version": self.schema_version,
+        }
+        return sha256(_deterministic_json(payload).encode("utf-8")).hexdigest()
+
+
+@dataclass(frozen=True)
+class DurableWriteResult:
+    path: Path
+    file_fsync_performed: bool
+    directory_fsync_performed: bool
+    atomic_replace_used: bool
+
+
+SUPPORTED_RUN_RECORD_SCHEMA = "oma7.run-record/v1"
+
+
+class ResumeClassification(str, Enum):
+    INVALID = "INVALID"
+    RESUMABLE_FINALIZATION = "RESUMABLE_FINALIZATION"
+    DONE = "DONE"
+    CONFLICT = "CONFLICT"
+
+
+def _safe_load_json(path: Path) -> dict[str, Any] | None:
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
+def _evidence_payload_from_observation(observation: ControlledLifecycleObservation) -> dict[str, Any]:
+    evidence = observation.evidence
+    if evidence is None:
+        return {}
+    return {
+        "schema_version": evidence.schema_version,
+        "subject_identity": evidence.subject_identity,
+        "materialization_identity": evidence.materialization_identity,
+        "execution_context_identity": evidence.execution_context_identity,
+        "verification_context_identity": evidence.verification_context_identity,
+        "scope_policy_identity": evidence.scope_policy_identity,
+        "provenance_anchor_identity": evidence.provenance_anchor_identity,
+        "result": evidence.result.value,
+        "verifier_id": evidence.verifier_id,
+        "run_id": evidence.run_id,
+        "cost_ledger_head": evidence.cost_ledger_head,
+        "cost_ledger_event_count": evidence.cost_ledger_event_count,
+        "human_intervention_summary": evidence.human_intervention_summary,
+        "predicate": evidence.predicate,
+    }
+
+
+def evidence_publication_payload(evidence: Evidence) -> dict[str, Any]:
+    payload = {
+        "schema_version": evidence.schema_version,
+        "subject_identity": evidence.subject_identity,
+        "materialization_identity": evidence.materialization_identity,
+        "execution_context_identity": evidence.execution_context_identity,
+        "verification_context_identity": evidence.verification_context_identity,
+        "scope_policy_identity": evidence.scope_policy_identity,
+        "provenance_anchor_identity": evidence.provenance_anchor_identity,
+        "result": evidence.result,
+        "verifier_id": evidence.verifier_id,
+        "run_id": evidence.run_id,
+        "cost_ledger_head": evidence.cost_ledger_head,
+        "cost_ledger_event_count": evidence.cost_ledger_event_count,
+        "human_intervention_summary": evidence.human_intervention_summary,
+        "predicate": evidence.predicate,
+    }
+    canonical = json.loads(_deterministic_json(payload, omit_none=True))
+    return canonical
+
+
+def _run_identity_payload(run_identity: RunIdentity) -> dict[str, Any]:
+    payload = {
+        "instance_id": run_identity.instance_id,
+        "phase": run_identity.phase,
+        "replicate": run_identity.replicate,
+        "subject_identity": run_identity.subject_identity,
+        "materialization_identity": run_identity.materialization_identity,
+        "execution_context_identity": run_identity.execution_context_identity,
+        "verification_context_identity": run_identity.verification_context_identity,
+        "scope_policy_identity": run_identity.scope_policy_identity,
+        "provenance_anchor_identity": run_identity.provenance_anchor_identity,
+    }
+    return json.loads(_deterministic_json(payload))
+
+
+def _evidence_identity_from_payload(payload: dict[str, Any] | None) -> str | None:
+    if payload is None:
+        return None
+    if payload.get("schema_version") != SUPPORTED_EVIDENCE_SCHEMA:
+        return None
+    try:
+        raw = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    except Exception:
+        return None
+    return sha256(raw.encode("utf-8")).hexdigest()
+
+
+def write_durable_run_record(path: str | Path, record: DurableRunRecord) -> DurableWriteResult:
+    payload = {
+        "schema_version": record.schema_version,
+        "run_identity": _run_identity_payload(record.run_identity),
+        "lifecycle_state": record.lifecycle_state.value,
+        "evidence_reference": record.evidence_reference,
+        "evidence_identity": record.evidence_identity,
+        "durability": record.durability,
+    }
+    target = Path(path)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_suffix(target.suffix + ".tmp")
+    content = _deterministic_json(payload)
+    with tmp.open("w", encoding="utf-8") as fh:
+        fh.write(content)
+        fh.flush()
+        try:
+            os.fsync(fh.fileno())
+        except OSError:
+            pass
+    tmp.replace(target)
+    file_fsync_performed = True
+    directory_fsync_performed = False
+    try:
+        dir_fd = os.open(target.parent, os.O_RDONLY)
+        try:
+            os.fsync(dir_fd)
+        finally:
+            os.close(dir_fd)
+        directory_fsync_performed = True
+    except OSError:
+        directory_fsync_performed = False
+    return DurableWriteResult(
+        path=target,
+        file_fsync_performed=file_fsync_performed,
+        directory_fsync_performed=directory_fsync_performed,
+        atomic_replace_used=True,
+    )
+
+
+def load_durable_run_record(path: str | Path) -> dict[str, Any] | None:
+    payload = _safe_load_json(Path(path))
+    if payload is None:
+        return None
+    if payload.get("schema_version") != SUPPORTED_RUN_RECORD_SCHEMA:
+        return None
+    return payload
+
+
+def classify_resume_state(
+    run_record: dict[str, Any] | None,
+    evidence_payload: dict[str, Any] | None,
+    expected_run_identity: RunIdentity,
+) -> ResumeClassification:
+    if run_record is None:
+        return (
+            ResumeClassification.RESUMABLE_FINALIZATION
+            if _evidence_identity_from_payload(evidence_payload) is not None
+            else ResumeClassification.INVALID
+        )
+    if run_record.get("schema_version") != SUPPORTED_RUN_RECORD_SCHEMA:
+        return ResumeClassification.INVALID
+    if run_record.get("run_identity") != _run_identity_payload(expected_run_identity):
+        return ResumeClassification.CONFLICT
+    if run_record.get("lifecycle_state") == LifecycleState.EVAL_DONE.value:
+        if evidence_payload is None:
+            return ResumeClassification.INVALID
+        if run_record.get("evidence_identity") != _evidence_identity_from_payload(evidence_payload):
+            return ResumeClassification.INVALID
+        return ResumeClassification.DONE
+    if evidence_payload is None:
+        return ResumeClassification.RESUMABLE_FINALIZATION
+    return ResumeClassification.RESUMABLE_FINALIZATION
+
+
+def finalize_durable_done(
+    run_record_path: str | Path,
+    evidence_path: str | Path,
+    expected_run_identity: RunIdentity,
+    observation: ControlledLifecycleObservation,
+) -> ResumeClassification:
+    run_record = load_durable_run_record(run_record_path)
+    evidence_payload = load_published_evidence(evidence_path)
+    classification = classify_resume_state(run_record, evidence_payload, expected_run_identity)
+    if classification not in {ResumeClassification.RESUMABLE_FINALIZATION, ResumeClassification.DONE}:
+        return classification
+    decision = evaluate_acceptance(observation)
+    if decision.outcome not in {AcceptanceOutcome.EVAL_DONE, AcceptanceOutcome.NO_OP}:
+        return ResumeClassification.INVALID
+    if evidence_payload is None or observation.evidence is None:
+        return ResumeClassification.INVALID
+    if _evidence_identity_from_payload(evidence_payload) != observation.evidence.identity():
+        return ResumeClassification.CONFLICT
+    write_durable_run_record(
+        run_record_path,
+        DurableRunRecord(
+            schema_version=SUPPORTED_RUN_RECORD_SCHEMA,
+            run_identity=expected_run_identity,
+            lifecycle_state=decision.lifecycle_state,
+            evidence_reference=str(Path(evidence_path)),
+            evidence_identity=observation.evidence.identity(),
+            durability={
+                "file_fsync_performed": True,
+                "directory_fsync_performed": False,
+                "atomic_replace_used": True,
+            },
+        ),
+    )
+    return ResumeClassification.DONE
