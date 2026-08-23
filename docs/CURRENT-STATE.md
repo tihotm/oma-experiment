@@ -4,7 +4,7 @@ Canonical invariant registry:
 
 - [CANONICAL-INVARIANT-REGISTRY.md](CANONICAL-INVARIANT-REGISTRY.md)
 
-HEAD = `c11ae9679642347d67d47334853f31572b92e721`
+HEAD = `153b9c2832464ed0ec9ccf02ab4c7ec9e91f15d7`
 
 Scientific state:
 
