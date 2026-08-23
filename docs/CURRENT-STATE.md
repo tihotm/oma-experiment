@@ -4,7 +4,7 @@ Canonical invariant registry:
 
 - [CANONICAL-INVARIANT-REGISTRY.md](CANONICAL-INVARIANT-REGISTRY.md)
 
-HEAD = `6fafc30`
+HEAD = `46cc437`
 
 Scientific state:
 
@@ -40,6 +40,7 @@ Runtime observations:
 - `host_docker_e2e.py` is the host-native orchestrator for the pending Docker campaign, with explicit stage-to-scenario mapping
 - restart recovery and persisted verification reuse are covered by unit and integration tests in `tests/test_supervision.py` and `tests/test_supervision_docker.py`
 - multi-attempt Docker supervision and active-container recovery scenarios are encoded; this session now has Docker runtime access and Docker-dependent tests execute here
+- the reproducible release candidate branch was merged back to `main` as `46cc437`
 - production Docker execution should be exercised from an authorized host Python process context using the same `src/oma7/` code and the same `tests/`
 - CODEX auth remains pending; synthetic supervision is not G0
 

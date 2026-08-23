@@ -8,6 +8,7 @@ Current factual state:
 - The offline post-execution pipeline is represented by typed fixtures and ledger reconstruction tests.
 - Docker/runtime access is reachable from this session; the readiness script reports `DOCKER_RUNTIME_READY=True` and `PINNED_CODEX_RUNTIME_READY=True`.
 - The current verified test baseline is `Ran 163 tests in 86.230s | OK`.
+- `main` contains the integrated release-candidate merge `46cc437`.
 - `REAL_CODEX_EXEC=0`, `REAL_CONTAINER_G0=0`, `REAL_A1=0`, `REAL_QUALIFIED_PAIRS=0`, and `MEASURED_PRODUCT_EFFECT=NO`.
 
 Current blockers:
