@@ -16,7 +16,7 @@ from oma7.control_plane import (
     classify_restart,
     can_retry,
     can_start_attempt,
-    create_control_record,
+    create_control_record as _create_control_record,
     duplicate_acceptance_prevented,
     duplicate_execution_prevented,
     load_control_record,
@@ -54,6 +54,28 @@ from oma7.models import (
     VerificationContextIdentity,
 )
 from oma7.scope import ScopeDecision, ScopeEvaluation, ScopePolicy, evaluate_scope_change, ScopeChange, ScopeOperation, ScopeObjectType, ProvenanceAnchorInputs, build_provenance_anchor
+
+
+
+def create_control_record(mission_id: str, run_id: str, budget) -> "oma7.control_plane.SupervisorControlRecord":
+    from oma7.models import SubjectIdentity, MaterializationIdentity, ExecutionContextIdentity, ScopePolicyIdentity, compute_mission_identity
+    from oma7.control_plane import control_policy_identity_from_policy
+    subject = SubjectIdentity(git_tree="tree", git_commit="commit", path=".")
+    materialization = MaterializationIdentity(subject_identity=subject, canonical_root_descriptor="git:root")
+    execution = ExecutionContextIdentity(environment_container_image_digest="env", codex_binary_digest="codex", codex_version="0.1.0", model="o-model", reasoning_level="high", harness_commit_or_digest="harness", harness_configuration_digest="cfg", dependency_lock_digest="lock", dataset_revision="data", toolchain_identity="tool")
+    scope = ScopePolicyIdentity(allowed_scope_path_policy=("**",), protected_semantic_roles=(), explicit_sensitive_change_authorizations=(), scope_budget="b", task_specific_exceptions=(), rule_schema_version="v1")
+    mission = compute_mission_identity(subject_identity=subject, materialization_identity=materialization, execution_context_identity=execution, scope_policy_identity=scope)
+    policy = control_policy_identity_from_policy(max_attempts=budget.max_attempts, max_elapsed_time_seconds=budget.max_elapsed_time_seconds, max_execution_time_per_attempt_seconds=budget.max_execution_time_per_attempt_seconds, retryable_classifications=(), non_retryable_classifications=(), escalation_reasons=())
+    return _create_control_record(
+        run_id=run_id,
+        budget=budget,
+        mission_identity=mission,
+        control_policy_identity=policy,
+        harness_binding_identity="harness-1:cfg-1",
+        subject_identity=subject,
+        execution_context_identity=execution,
+        scope_policy_identity=scope,
+    )
 
 
 def _subject(tag: str = "a") -> SubjectIdentity:

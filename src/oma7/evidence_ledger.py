@@ -7,6 +7,9 @@ from typing import List
 
 from .models import Evidence, ResultStatus
 
+
+POST_EXECUTION_SCHEMA = "oma7.post-execution/v1"
+
 def _canonical(value):
     if value is None or isinstance(value, (str, int, float, bool)):
         return value
@@ -90,13 +93,43 @@ def load_evidence(run_id: str, base_dir: str | Path = "evidence") -> List[Eviden
             if data.get("schema_version") != "oma7.evidence/v1":
                 return []
             try:
+                from .control_plane import _load_subject_identity, _load_materialization_identity, _load_execution_context_identity, _load_scope_policy_identity
+                # We need to construct VerificationContextIdentity and ProvenanceAnchorIdentity manually because
+                # they aren't loaded in full by _load_* (or we can just construct them if they exist).
+                v_data = data.get("verification_context_identity")
+                verification_context_identity = None
+                if v_data is not None:
+                    from .models import VerificationContextIdentity
+                    verification_context_identity = VerificationContextIdentity(
+                        dataset_revision=v_data["dataset_revision"],
+                        oracle_test_patch_identity=v_data["oracle_test_patch_identity"],
+                        fail_to_pass=tuple(v_data.get("fail_to_pass", ())),
+                        pass_to_pass=tuple(v_data.get("pass_to_pass", ())),
+                        harness_commit_or_digest=v_data["harness_commit_or_digest"],
+                        verification_configuration_digest=v_data["verification_configuration_digest"],
+                        verifier_environment_image_digest=v_data.get("verifier_environment_image_digest"),
+                        verifier_identity=v_data.get("verifier_identity"),
+                        schema_version=v_data.get("schema_version", "oma7.verification-context/v1")
+                    )
+                p_data = data.get("provenance_anchor_identity")
+                provenance_anchor_identity = None
+                if p_data is not None:
+                    from .models import ProvenanceAnchorIdentity
+                    provenance_anchor_identity = ProvenanceAnchorIdentity(
+                        anchor_type=p_data["anchor_type"],
+                        immutable_anchor_identifier_digest=p_data["immutable_anchor_identifier_digest"],
+                        provenance_root=p_data["provenance_root"],
+                        event_count=p_data.get("event_count"),
+                        schema_information=p_data.get("schema_information")
+                    )
+
                 evidence = Evidence(
-                    subject_identity=data.get("subject_identity"),
-                    materialization_identity=data.get("materialization_identity"),
-                    execution_context_identity=data.get("execution_context_identity"),
-                    verification_context_identity=data.get("verification_context_identity"),
-                    scope_policy_identity=data.get("scope_policy_identity"),
-                    provenance_anchor_identity=data.get("provenance_anchor_identity"),
+                    subject_identity=_load_subject_identity(data.get("subject_identity")),
+                    materialization_identity=_load_materialization_identity(data.get("materialization_identity")),
+                    execution_context_identity=_load_execution_context_identity(data.get("execution_context_identity")),
+                    verification_context_identity=verification_context_identity,
+                    scope_policy_identity=_load_scope_policy_identity(data.get("scope_policy_identity")),
+                    provenance_anchor_identity=provenance_anchor_identity,
                     result=ResultStatus(data.get("result")),
                     schema_version=data.get("schema_version"),
                     verifier_id=data.get("verifier_id"),
@@ -111,3 +144,47 @@ def load_evidence(run_id: str, base_dir: str | Path = "evidence") -> List[Eviden
                 return []
             expected_index += 1
     return evidences
+
+
+def append_post_execution_record(run_id: str, record: object, base_dir: str | Path = "evidence") -> None:
+    ledger_file = _ledger_path(f"{run_id}.post-execution", base_dir)
+    current = load_post_execution_records(run_id, base_dir)
+    event_index = len(current) + 1
+    payload = {"schema_version": POST_EXECUTION_SCHEMA, "run_id": run_id, "event_index": event_index, "record": _canonical(record)}
+    line = json.dumps(payload, ensure_ascii=False, sort_keys=True)
+    tmp = ledger_file.with_suffix(".tmp")
+    with tmp.open("w", encoding="utf-8") as fh:
+        for existing_index, existing in enumerate(current, start=1):
+            fh.write(json.dumps(existing, ensure_ascii=False, sort_keys=True) + "\n")
+        fh.write(line + "\n")
+        fh.flush()
+        os.fsync(fh.fileno())
+    tmp.replace(ledger_file)
+
+
+def load_post_execution_records(run_id: str, base_dir: str | Path = "evidence") -> List[dict[str, object]]:
+    ledger_file = _ledger_path(f"{run_id}.post-execution", base_dir)
+    if not ledger_file.exists():
+        return []
+    records: List[dict[str, object]] = []
+    expected_index = 1
+    with ledger_file.open("r", encoding="utf-8") as fh:
+        for raw_line in fh:
+            line = raw_line.strip()
+            if not line:
+                return []
+            try:
+                data = json.loads(line)
+            except Exception:
+                return []
+            if not isinstance(data, dict):
+                return []
+            if data.get("run_id") != run_id:
+                return []
+            if data.get("event_index") != expected_index:
+                return []
+            if data.get("schema_version") != POST_EXECUTION_SCHEMA:
+                return []
+            records.append(data)
+            expected_index += 1
+    return records

@@ -1,19 +1,46 @@
-name: ci
+name: CI
 
 on:
   push:
+    branches:
+      - main
   pull_request:
 
 jobs:
-  test:
+  offline:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-      - name: Install
-        run: python -m pip install -e . pytest
-      - name: Test
-        run: pytest -q
-
+      - name: Validate harness docs
+        run: python scripts/validate-harness.py
+      - name: Run release-candidate readiness
+        run: python scripts/oma7-release-candidate-readiness.py --json
+      - name: Run offline tests
+        run: python -m unittest discover -s tests -v
+  docker:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Check Docker capability
+        shell: pwsh
+        run: |
+          $payload = python scripts/oma7-release-candidate-readiness.py --json | Out-String
+          $data = $payload | ConvertFrom-Json
+          "DOCKER_CAPABILITY=$($data.docker_capability)"
+      - name: Run Docker tests when capability exists
+        shell: pwsh
+        run: |
+          $payload = python scripts/oma7-release-candidate-readiness.py --json | Out-String
+          $data = $payload | ConvertFrom-Json
+          if ($data.readiness.docker_runtime_ready) {
+            python -m unittest tests.test_docker_lifecycle tests.test_supervision_docker -v
+          } else {
+            Write-Host "DOCKER_RUNTIME_READY=False"
+            Write-Host "PINNED_CODEX_RUNTIME_READY=False"
+          }
