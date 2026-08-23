@@ -76,7 +76,13 @@ class SubjectIdentity:
     def identity(self) -> str:
         if not self.is_valid():
             raise ValueError("subject identity requires git_tree")
-        return _digest_payload(self)
+        # `path` is a materialization detail and must not contaminate the logical subject.
+        payload = {
+            "git_tree": self.git_tree,
+            "git_commit": self.git_commit,
+            "schema_version": self.schema_version,
+        }
+        return _digest_payload(payload)
 
 
 @dataclass(frozen=True)
@@ -283,3 +289,92 @@ class Observation:
     @property
     def result(self) -> ResultStatus:
         return self.evidence.result
+
+# ---------------------------------------------------------------------------
+# MissionIdentity — pre-execution, deterministic mission fingerprint
+# ---------------------------------------------------------------------------
+# MissionIdentity is computable *before* any execution attempt.  It binds the
+# specification (subject + materialization), the execution context, and the
+# scope policy.  It does NOT require a post-verification Evidence.
+#
+# VerificationContextIdentity is included because the oracle/harness
+# configuration is fixed before execution and is part of what defines "this
+# mission".  ProvenanceAnchorIdentity is included when known (e.g. a
+# pre-declared log anchor) but is optional at identity computation time.
+# ---------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class MissionIdentity:
+    subject_identity: SubjectIdentity
+    materialization_identity: MaterializationIdentity
+    execution_context_identity: ExecutionContextIdentity
+    scope_policy_identity: ScopePolicyIdentity
+    verification_context_identity: VerificationContextIdentity | None = None
+    provenance_anchor_identity: ProvenanceAnchorIdentity | None = None
+    schema_version: str = "oma7.mission/v1"
+
+    def is_valid(self) -> bool:
+        return (
+            self.subject_identity is not None
+            and self.materialization_identity is not None
+            and self.execution_context_identity is not None
+            and self.scope_policy_identity is not None
+            and self.subject_identity.is_valid()
+            and self.materialization_identity.is_valid()
+            and self.execution_context_identity.is_valid()
+        )
+
+    def identity(self) -> str:
+        if not self.is_valid():
+            raise ValueError("MissionIdentity missing required pre-execution fields")
+        # Stable ordered list of component hashes.  Optional fields contribute
+        # None so that the hash changes if they are later added (fail-open
+        # expansion is explicit and visible in the hash).
+        components: list[Any] = [
+            self.schema_version,
+            self.subject_identity.identity(),
+            self.materialization_identity.identity(),
+            self.execution_context_identity.identity(),
+            self.scope_policy_identity.identity(),
+            self.verification_context_identity.identity()
+            if self.verification_context_identity is not None
+            else None,
+            self.provenance_anchor_identity.identity()
+            if self.provenance_anchor_identity is not None
+            else None,
+        ]
+        return _digest_payload(components)
+
+
+def compute_mission_identity(
+    *,
+    subject_identity: SubjectIdentity,
+    materialization_identity: MaterializationIdentity,
+    execution_context_identity: ExecutionContextIdentity,
+    scope_policy_identity: ScopePolicyIdentity,
+    verification_context_identity: VerificationContextIdentity | None = None,
+    provenance_anchor_identity: ProvenanceAnchorIdentity | None = None,
+) -> MissionIdentity:
+    """Build a MissionIdentity from pre-execution primitives.
+
+    All required identities must be valid (non-None, non-empty) before any
+    execution attempt is created.  This is intentionally a pre-execution
+    construct; it does not require and must not be derived from a post-
+    verification Evidence object.
+
+    Raises ValueError if any required primitive is invalid.
+    """
+    mi = MissionIdentity(
+        subject_identity=subject_identity,
+        materialization_identity=materialization_identity,
+        execution_context_identity=execution_context_identity,
+        scope_policy_identity=scope_policy_identity,
+        verification_context_identity=verification_context_identity,
+        provenance_anchor_identity=provenance_anchor_identity,
+    )
+    if not mi.is_valid():
+        raise ValueError(
+            "compute_mission_identity: one or more required pre-execution identities are invalid"
+        )
+    return mi
+

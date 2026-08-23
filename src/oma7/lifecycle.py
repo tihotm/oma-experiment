@@ -19,6 +19,7 @@ from .models import (
     SubjectIdentity,
     VerificationContextIdentity,
 )
+from .scope import ScopeDecision, ScopeEvaluation
 
 
 class LifecycleState(str, Enum):
@@ -64,6 +65,7 @@ class ControlledLifecycleObservation:
     verification_context_identity: VerificationContextIdentity | None
     scope_policy_identity: ScopePolicyIdentity | None
     provenance_anchor_identity: ProvenanceAnchorIdentity | None
+    scope_evaluation: ScopeEvaluation | None = None
     quiescence_status: GateStatus = GateStatus.NOT_IMPLEMENTED
     freeze_status: GateStatus = GateStatus.NOT_IMPLEMENTED
     integrity_status: GateStatus = GateStatus.NOT_IMPLEMENTED
@@ -151,6 +153,30 @@ def evaluate_acceptance(
             outcome=AcceptanceOutcome.NOT_ACCEPTED,
             lifecycle_state=observation.lifecycle_state,
             reason="mandatory identity missing or unknown",
+        )
+    if observation.scope_evaluation is None:
+        return AcceptanceDecision(
+            outcome=AcceptanceOutcome.NOT_ACCEPTED,
+            lifecycle_state=observation.lifecycle_state,
+            reason="scope evaluation missing",
+        )
+    if not observation.scope_evaluation.is_valid_for(
+        observation.subject_identity,
+        observation.materialization_identity,
+    ):
+        return AcceptanceDecision(
+            outcome=AcceptanceOutcome.NOT_ACCEPTED,
+            lifecycle_state=observation.lifecycle_state,
+            reason="scope evidence stale or invalid",
+        )
+    if observation.scope_evaluation.decision != ScopeDecision.ALLOW:
+        return AcceptanceDecision(
+            outcome=AcceptanceOutcome.NOT_ACCEPTED,
+            lifecycle_state=LifecycleState.REVIEW_REQUIRED
+            if observation.scope_evaluation.decision == ScopeDecision.REVIEW
+            else observation.lifecycle_state,
+            reason=f"scope decision {observation.scope_evaluation.decision.value.lower()}",
+            applicable_evidence=None,
         )
     applicability = EvidenceApplicability(
         subject_identity=observation.evidence.subject_identity

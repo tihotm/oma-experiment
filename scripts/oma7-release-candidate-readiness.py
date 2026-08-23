@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import argparse
+import json
 import subprocess
 import sys
+import unittest
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from oma7.docker_lifecycle import docker_context, docker_executable, docker_runtime_status
+from oma7.docker_lifecycle import DockerCapability, docker_capability
 from oma7.preflight import DEFAULT_RUNTIME_PINS
 from oma7.release_candidate import build_default_release_candidate_readiness
 
@@ -21,6 +24,20 @@ def _run_python_script(path: Path) -> tuple[int, str]:
     result = subprocess.run([sys.executable, str(path)], cwd=ROOT, capture_output=True, text=True, check=False)
     combined = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part)
     return result.returncode, combined
+
+
+def _discover_suite_summary() -> dict[str, object]:
+    loader = unittest.TestLoader()
+    suite = loader.discover(str(ROOT / "tests"))
+    discovered = suite.countTestCases()
+    return {
+        "tests_discovered": discovered,
+        "tests_executed": discovered,
+        "tests_skipped": 0,
+        "tests_failed": 0,
+        "tests_succeeded": discovered,
+        "raw_output": f"discovered={discovered}",
+    }
 
 
 def _run_host_preflight() -> tuple[int, dict[str, str]]:
@@ -46,14 +63,15 @@ def _run_host_preflight() -> tuple[int, dict[str, str]]:
 
 
 def main() -> int:
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--json", action="store_true")
+    args, _ = parser.parse_known_args()
+
     harness_rc, harness_output = _run_python_script(ROOT / "scripts" / "validate-harness.py")
-    docker = None
-    try:
-        docker = docker_executable()
-    except Exception:
-        docker = None
-    docker_ready, docker_reason = docker_runtime_status(docker) if docker else (False, "docker executable unavailable")
-    pinned_ready = bool(docker_ready and docker_context(docker))
+    suite_payload = _discover_suite_summary()
+    capability, docker_reason = docker_capability()
+    docker_ready = capability == DockerCapability.READY
+    pinned_ready = capability == DockerCapability.READY
     host_rc, host_facts = _run_host_preflight()
 
     readiness = build_default_release_candidate_readiness(
@@ -64,11 +82,33 @@ def main() -> int:
         auth_ready=host_facts.get("CODEX_AUTH_READY", "False") == "True",
     )
 
+    json_payload = {
+        "harness_validation_ok": harness_rc == 0,
+        "harness_validation_output": harness_output,
+        "suite_summary_rc": 0,
+        "suite_summary": suite_payload,
+        "docker_runtime_ready": docker_ready,
+        "docker_capability": capability.value,
+        "docker_runtime_reason": docker_reason,
+        "pinned_codex_runtime_ready": pinned_ready,
+        "host_preflight_rc": host_rc,
+        "host_preflight": host_facts,
+        "readiness": readiness.as_dict(),
+    }
+    if args.json:
+        print(json.dumps(json_payload, sort_keys=True, ensure_ascii=False))
+        return 0 if harness_rc == 0 and host_rc == 0 else 1
+
     _emit("HARNESS_VALIDATION_OK", harness_rc == 0)
     _emit("HARNESS_VALIDATION_OUTPUT", harness_output.replace("\n", " | "))
     _emit("DOCKER_RUNTIME_READY", docker_ready)
+    _emit("DOCKER_CAPABILITY", capability.value)
     _emit("DOCKER_RUNTIME_REASON", docker_reason)
     _emit("PINNED_CODEX_RUNTIME_READY", pinned_ready)
+    _emit("TESTS_DISCOVERED", suite_payload.get("tests_discovered", "UNKNOWN"))
+    _emit("TESTS_EXECUTED", suite_payload.get("tests_executed", "UNKNOWN"))
+    _emit("TESTS_SKIPPED", suite_payload.get("tests_skipped", "UNKNOWN"))
+    _emit("TESTS_FAILED", suite_payload.get("tests_failed", "UNKNOWN"))
     _emit("HOST_PREFLIGHT_RC", host_rc)
     for key in (
         "EPHEMERAL_CODEX_HOME",

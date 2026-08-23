@@ -230,6 +230,8 @@ class SupervisorControlRecord:
             budget=self.budget,
             budget_state=self.budget_state,
             current_attempt_id=attempt.attempt_identity.attempt_id if current else self.current_attempt_id,
+            control_policy_id=self.control_policy_id,
+            scope_policy_id=self.scope_policy_id,
             attempts=updated_attempts + (new_attempt,),
             subject_identity=self.subject_identity,
             mission_identity=self.mission_identity,
@@ -677,14 +679,17 @@ def bind_control_record(
     scope_policy_identity: ScopePolicyIdentity | None = None,
     provenance_anchor_identity: ProvenanceAnchorIdentity | None = None,
 ) -> SupervisorControlRecord:
+    scope_pi = scope_policy_identity if scope_policy_identity is not None else record.scope_policy_identity
     return SupervisorControlRecord(
         schema_version=record.schema_version,
-        mission_id=record.mission_id,
+        mission_id=mission_identity.identity(),
         run_id=record.run_id,
         state=record.state,
         budget=record.budget,
         budget_state=record.budget_state,
         current_attempt_id=record.current_attempt_id,
+        control_policy_id=control_policy_identity.identity(),
+        scope_policy_id=scope_pi.identity() if scope_pi else None,
         attempts=record.attempts,
         subject_identity=subject_identity if subject_identity is not None else record.subject_identity,
         mission_identity=mission_identity,
