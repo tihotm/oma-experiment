@@ -13,9 +13,6 @@ from typing import Any
 from .models import ExecutionContextIdentity
 
 
-DEFAULT_CODEX_IMAGE_REF = "sha256:1d20675dba6987fd196f57c8be142683e6610ed2d72428c50ff5dfe2b758b381"
-
-
 class PreflightResult(str, Enum):
     PASS = "PASS"
     ENVIRONMENT_BLOCKED = "ENVIRONMENT_BLOCKED"
@@ -90,6 +87,21 @@ class RuntimePins:
             if name in immutable_fields and not self._is_immutable_token(value):
                 return False
         return True
+
+
+DEFAULT_CODEX_IMAGE_REF = "sha256:1d20675dba6987fd196f57c8be142683e6610ed2d72428c50ff5dfe2b758b381"
+DEFAULT_RUNTIME_PINS = RuntimePins(
+    codex_sha256="6ee176b43f96b2294c8e2265d599f829e161b2c2ad34cb2b8fbf5f836fd34b8c",
+    codex_version="0.1.0",
+    model="o-model",
+    reasoning_level="high",
+    harness_commit_or_digest="8be9acebf1387b0fe0abdfdce8bb2ef9a2c0ac50",
+    harness_configuration_digest="sha256:1111111111111111111111111111111111111111111111111111111111111111",
+    dataset_revision="sha256:2222222222222222222222222222222222222222222222222222222222222222",
+    dependency_lock_digest="sha256:3333333333333333333333333333333333333333333333333333333333333333",
+    container_image_digest=DEFAULT_CODEX_IMAGE_REF,
+    toolchain_identity="sha256:5555555555555555555555555555555555555555555555555555555555555555",
+)
 
 
 @dataclass(frozen=True)

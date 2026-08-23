@@ -23,6 +23,7 @@ Specialized contracts:
 Versioned state:
 
 - [CURRENT-WORK.md](CURRENT-WORK.md) - current factual state and active blockers
+- [FIRST-REAL-MISSION.md](FIRST-REAL-MISSION.md) - canonical first real mission and release-candidate shape
 - [../CURRENT-STATE.md](../CURRENT-STATE.md) - stable repository state and counters
 - [../DECISIONS.md](../DECISIONS.md) - architectural decisions
 - [../ROADMAP.md](../ROADMAP.md) - active roadmap and staged scope

@@ -4,7 +4,7 @@ Canonical invariant registry:
 
 - [CANONICAL-INVARIANT-REGISTRY.md](CANONICAL-INVARIANT-REGISTRY.md)
 
-HEAD = `1398771a77f0a8f98467b9b49063c9536d5034b3`
+HEAD = `c11ae9679642347d67d47334853f31572b92e721`
 
 Scientific state:
 
@@ -32,10 +32,11 @@ Current discovered test count:
 
 Runtime observations:
 
-- current discovered test baseline is 129 cases across 7 `tests/test_*.py` modules
+- current discovered test baseline is 158 cases across 10 `tests/test_*.py` modules
 - offline control-plane coverage was expanded with `tests/test_control_plane_offline.py`
 - `load_control_record` now preserves current attempt state on reload
 - `tests/test_supervision_docker.py` now includes explicit runtime coverage for cross-run Docker isolation and oracle isolation across retries
+- `scripts/oma7-release-candidate-readiness.py` derives the release-candidate rehearsal facts without manual transcription
 - `host_docker_e2e.py` is the host-native orchestrator for the pending Docker campaign, with explicit stage-to-scenario mapping
 - restart recovery and persisted verification reuse are covered by unit and integration tests in `tests/test_supervision.py` and `tests/test_supervision_docker.py`
 - multi-attempt Docker supervision and active-container recovery scenarios are encoded; this Codex sandbox token lacks Docker pipe authorization, while the host PowerShell user token can reach the Docker Desktop pipe

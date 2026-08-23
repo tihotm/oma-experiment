@@ -38,6 +38,7 @@ from .scope import (
 )
 from .preflight import (
     DEFAULT_CODEX_IMAGE_REF,
+    DEFAULT_RUNTIME_PINS,
     PreflightResult,
     RuntimePins,
     SandboxPreflightConfig,
@@ -124,4 +125,16 @@ from .control_plane import (
     transition_allowed,
     update_budget_state,
     write_control_record,
+)
+from .release_candidate import (
+    DEFAULT_HARNESS_BINDING_IDENTITY,
+    DEFAULT_SCOPE_BUDGET,
+    DEFAULT_VERIFICATION_COMMAND,
+    FirstRealMissionSpec,
+    ReleaseCandidateReadiness,
+    build_default_release_candidate_readiness,
+    build_first_real_mission_spec,
+    build_release_candidate_control_record,
+    build_release_candidate_plan,
+    build_release_candidate_readiness,
 )
