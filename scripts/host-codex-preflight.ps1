@@ -14,6 +14,18 @@ function Emit([string]$Key, [object]$Value) {
     Write-Output ("{0}={1}" -f $Key, $Value)
 }
 
+function Test-CodexCli {
+    $explicit = if ($env:CODEX_CLI_PATH) { $env:CODEX_CLI_PATH } else { $null }
+    if ($explicit) {
+        return [pscustomobject]@{ Ready = $true; Path = $explicit; Reason = 'codex CLI path provided' }
+    }
+    $command = Get-Command codex -ErrorAction SilentlyContinue
+    if ($command) {
+        return [pscustomobject]@{ Ready = $true; Path = $command.Source; Reason = 'codex CLI found on PATH' }
+    }
+    return [pscustomobject]@{ Ready = $false; Path = $null; Reason = 'codex executable unavailable' }
+}
+
 function Run-Command([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment = $null) {
     if ($Environment) {
         foreach ($entry in $Environment.GetEnumerator()) {
@@ -95,15 +107,33 @@ function Test-CodexLoginStatus {
     return [pscustomobject]@{ Ready = $false; Status = 'UNAUTHENTICATED'; Detail = $detail }
 }
 
+function Test-CodexLoginStatusLocal {
+    param([string]$CodexPath, [string]$CodexHomePath)
+    New-Item -ItemType Directory -Force -Path $CodexHomePath | Out-Null
+    $probe = Run-Command -FilePath $CodexPath -Arguments @('login', 'status') -Environment @{
+        CODEX_HOME = $CodexHomePath
+    }
+    if ($probe.ExitCode -eq 0) {
+        $detail = if ($probe.Stdout) { $probe.Stdout } else { 'codex login status ok' }
+        return [pscustomobject]@{ Ready = $true; Status = 'AUTH_READY'; Detail = $detail }
+    }
+    $detail = if ($probe.Stderr) { $probe.Stderr } elseif ($probe.Stdout) { $probe.Stdout } else { 'codex login status failed' }
+    return [pscustomobject]@{ Ready = $false; Status = 'AUTH_NOT_READY'; Detail = $detail }
+}
+
 $docker = Test-DockerRuntime
 $runtime = if ($docker.Ready) { Test-PinnedRuntime -Image $PinnedImage } else { [pscustomobject]@{ Ready = $false; Reason = 'docker runtime unavailable' } }
+$codexCli = Test-CodexCli
 
 Emit 'DOCKER_RUNTIME_READY' $docker.Ready
 Emit 'PINNED_CODEX_RUNTIME_READY' $runtime.Ready
 Emit 'EPHEMERAL_CODEX_HOME' $CodexHome
+Emit 'CODEX_CLI_CAPABILITY' ($(if ($codexCli.Ready) { 'CLI_AVAILABLE' } else { 'CLI_ABSENT' }))
+Emit 'CODEX_CLI_REASON' $codexCli.Reason
 
 if (-not $docker.Ready -or -not $runtime.Ready) {
     Emit 'EPHEMERAL_CODEX_LOGIN_STATUS' 'UNAVAILABLE'
+    Emit 'CODEX_AUTH_STATUS' 'NOT_PROBED'
     Emit 'CODEX_AUTH_READY' $false
     Emit 'ATTEMPT_CREATED' $false
     Emit 'REAL_CODEX_EXEC' 0
@@ -111,8 +141,19 @@ if (-not $docker.Ready -or -not $runtime.Ready) {
     exit 0
 }
 
-$login = Test-CodexLoginStatus -Image $PinnedImage -CodexHomePath $CodexHome
+if (-not $codexCli.Ready) {
+    Emit 'EPHEMERAL_CODEX_LOGIN_STATUS' 'UNAVAILABLE'
+    Emit 'CODEX_AUTH_STATUS' 'NOT_PROBED'
+    Emit 'CODEX_AUTH_READY' $false
+    Emit 'ATTEMPT_CREATED' $false
+    Emit 'REAL_CODEX_EXEC' 0
+    Emit 'NEXT_SINGLE_ACTION' 'Make the Codex CLI available in the host/runtime path, then rerun this script'
+    exit 0
+}
+
+$login = Test-CodexLoginStatusLocal -CodexPath $codexCli.Path -CodexHomePath $CodexHome
 Emit 'EPHEMERAL_CODEX_LOGIN_STATUS' ("{0}: {1}" -f $login.Status, $login.Detail)
+Emit 'CODEX_AUTH_STATUS' $login.Status
 Emit 'CODEX_AUTH_READY' $login.Ready
 
 if (-not $login.Ready) {

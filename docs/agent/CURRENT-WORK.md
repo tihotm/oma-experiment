@@ -8,8 +8,9 @@ Current factual state:
 - The offline post-execution pipeline is represented by typed fixtures and ledger reconstruction tests.
 - `src/oma7/accounting.py` now provides the canonical cost-ledger and human-intervention accounting primitives.
 - `src/oma7/recovery.py` now classifies restart/replay outcomes over control, evidence, accounting, and post-execution persistence.
+- `src/oma7/codex_runtime.py` now separates Codex CLI availability from auth readiness in executable code.
 - Docker/runtime access is reachable from this session; the readiness script reports `DOCKER_RUNTIME_READY=True` and `PINNED_CODEX_RUNTIME_READY=True`.
-- The current verified test baseline is `Ran 159 tests in 106.870s | OK (skipped=8)`.
+- The current verified test baseline is `Ran 163 tests in 163.509s | OK (skipped=8)`.
 - In this runner, `codex` is not locatable via `where.exe`; that is a capability boundary, not auth state.
 - `main` contains the integrated release-candidate merge `46cc437`.
 - `REAL_CODEX_EXEC=0`, `REAL_CONTAINER_G0=0`, `REAL_A1=0`, `REAL_QUALIFIED_PAIRS=0`, and `MEASURED_PRODUCT_EFFECT=NO`.

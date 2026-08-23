@@ -41,6 +41,8 @@ class ReleaseCandidateTests(unittest.TestCase):
             check=False,
         )
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn("CODEX_CLI_CAPABILITY=CLI_ABSENT", result.stdout)
+        self.assertIn("CODEX_AUTH_STATUS=NOT_PROBED", result.stdout)
         self.assertIn("RC_ATTEMPT_CREATED=False", result.stdout)
         self.assertIn("RC_REAL_CODEX_EXEC=0", result.stdout)
         self.assertIn("RC_MISSION_PLAN_READY=True", result.stdout)
@@ -58,6 +60,18 @@ class ReleaseCandidateTests(unittest.TestCase):
         self.assertIn('"auth_ready": false', result.stdout.lower())
         self.assertIn('"mission_plan_ready": true', result.stdout.lower())
         self.assertIn('"real_codex_exec": 0', result.stdout.lower())
+
+    def test_release_candidate_readiness_distinguishes_codex_cli_absence(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "oma7-release-candidate-readiness.py"), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn('"codex_cli_capability": "cli_absent"', result.stdout.lower())
+        self.assertIn('"codex_auth_status": "not_probed"', result.stdout.lower())
 
 
 if __name__ == "__main__":
