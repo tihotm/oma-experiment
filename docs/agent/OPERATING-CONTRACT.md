@@ -29,7 +29,8 @@ Use this order when resolving a task:
 
 ## Git and integration
 
-- Use branch, commit, PR, CI, and merge according to the repository workflow.
+- Default workflow: branch, commit, PR, CI, and merge.
+- Direct `push` to `origin/main` is allowed only when a mission explicitly authorizes direct publication or when the repository workflow for that task says direct publication is the canonical path.
 - Keep commits logical and evidence-backed.
 - Do not commit or push unless the workflow or explicit request allows it.
 

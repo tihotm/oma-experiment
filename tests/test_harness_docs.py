@@ -38,6 +38,8 @@ class HarnessDocsTests(unittest.TestCase):
         self.assertIn("Autonomy", contract)
         self.assertIn("Evidence and state", contract)
         self.assertIn("Git and integration", contract)
+        self.assertIn("Default workflow: branch, commit, PR, CI, and merge.", contract)
+        self.assertIn("Direct `push` to `origin/main` is allowed only when", contract)
         self.assertIn("Boundaries and stopping", contract)
         self.assertIn("Handoff", contract)
 
