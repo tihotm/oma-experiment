@@ -4,6 +4,7 @@ import argparse
 import json
 import re
 import subprocess
+import os
 import sys
 from pathlib import Path
 
@@ -12,9 +13,12 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 def _run_suite() -> tuple[int, str]:
+    env = dict(os.environ)
+    env["OMA7_DISABLE_READINESS_SUITE_SUMMARY"] = "1"
     result = subprocess.run(
         [sys.executable, "-m", "unittest", "discover", "-s", "tests", "-v"],
         cwd=ROOT,
+        env=env,
         capture_output=True,
         text=True,
         check=False,

@@ -54,9 +54,16 @@ def _serialize_entry(run_id: str, event_index: int, evidence: Evidence) -> str:
     return json.dumps(payload, ensure_ascii=False, sort_keys=True)
 
 
-def append_evidence(run_id: str, evidence: Evidence, base_dir: str | Path = "evidence") -> None:
+def append_evidence(run_id: str, evidence: Evidence, base_dir: str | Path = "evidence", *, expected_next_event_index: int | None = None) -> None:
     ledger_file = _ledger_path(run_id, base_dir)
     current = load_evidence(run_id, base_dir)
+    if current and current[-1].identity() == evidence.identity():
+        return
+    for existing in current:
+        if existing.identity() == evidence.identity():
+            return
+    if expected_next_event_index is not None and expected_next_event_index != len(current) + 1:
+        raise ValueError("stale evidence ledger write rejected")
     event_index = len(current) + 1
     line = _serialize_entry(run_id, event_index, evidence)
     tmp = ledger_file.with_suffix(".tmp")
@@ -146,11 +153,17 @@ def load_evidence(run_id: str, base_dir: str | Path = "evidence") -> List[Eviden
     return evidences
 
 
-def append_post_execution_record(run_id: str, record: object, base_dir: str | Path = "evidence") -> None:
+def append_post_execution_record(run_id: str, record: object, base_dir: str | Path = "evidence", *, expected_next_event_index: int | None = None) -> None:
     ledger_file = _ledger_path(f"{run_id}.post-execution", base_dir)
     current = load_post_execution_records(run_id, base_dir)
+    record_payload = _canonical(record)
+    for existing in current:
+        if existing.get("record") == record_payload:
+            return
+    if expected_next_event_index is not None and expected_next_event_index != len(current) + 1:
+        raise ValueError("stale post-execution ledger write rejected")
     event_index = len(current) + 1
-    payload = {"schema_version": POST_EXECUTION_SCHEMA, "run_id": run_id, "event_index": event_index, "record": _canonical(record)}
+    payload = {"schema_version": POST_EXECUTION_SCHEMA, "run_id": run_id, "event_index": event_index, "record": record_payload}
     line = json.dumps(payload, ensure_ascii=False, sort_keys=True)
     tmp = ledger_file.with_suffix(".tmp")
     with tmp.open("w", encoding="utf-8") as fh:

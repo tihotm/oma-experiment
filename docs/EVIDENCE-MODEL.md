@@ -39,9 +39,9 @@ Dictionary ordering differences must not change identity.
 Unsupported or noncanonical values fail closed instead of being silently
 stringified.
 
-## Forward-compatible fields
+## Accounting fields
 
-Reserved for later composition:
+The evidence model now preserves accounting bindings that feed provenance:
 
 - `verifier_id`
 - `run_id`
@@ -49,3 +49,5 @@ Reserved for later composition:
 - `cost_ledger_event_count`
 - `human_intervention_summary`
 
+These fields remain fail-closed bindings. Missing or invalid accounting data
+does not authorize acceptance and does not synthesize a ledger head.

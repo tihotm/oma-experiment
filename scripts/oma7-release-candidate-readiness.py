@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import unittest
@@ -27,16 +28,42 @@ def _run_python_script(path: Path) -> tuple[int, str]:
 
 
 def _discover_suite_summary() -> dict[str, object]:
-    loader = unittest.TestLoader()
-    suite = loader.discover(str(ROOT / "tests"))
-    discovered = suite.countTestCases()
+    if os.environ.get("OMA7_DISABLE_READINESS_SUITE_SUMMARY") == "1":
+        loader = unittest.TestLoader()
+        suite = loader.discover(str(ROOT / "tests"))
+        discovered = suite.countTestCases()
+        return {
+            "tests_discovered": discovered,
+            "tests_executed": discovered,
+            "tests_skipped": 0,
+            "tests_failed": 0,
+            "tests_succeeded": discovered,
+            "raw_output": f"discovered={discovered}",
+        }
+    result = subprocess.run(
+        [sys.executable, str(ROOT / "scripts" / "oma7-suite-summary.py"), "--json"],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode != 0:
+        return {
+            "tests_discovered": None,
+            "tests_executed": None,
+            "tests_skipped": None,
+            "tests_failed": None,
+            "tests_succeeded": None,
+            "raw_output": "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part),
+        }
+    payload = json.loads(result.stdout)
     return {
-        "tests_discovered": discovered,
-        "tests_executed": discovered,
-        "tests_skipped": 0,
-        "tests_failed": 0,
-        "tests_succeeded": discovered,
-        "raw_output": f"discovered={discovered}",
+        "tests_discovered": payload.get("tests_discovered"),
+        "tests_executed": payload.get("tests_executed"),
+        "tests_skipped": payload.get("tests_skipped"),
+        "tests_failed": payload.get("tests_failed"),
+        "tests_succeeded": payload.get("tests_succeeded"),
+        "raw_output": payload.get("raw_output"),
     }
 
 
@@ -85,7 +112,7 @@ def main() -> int:
     json_payload = {
         "harness_validation_ok": harness_rc == 0,
         "harness_validation_output": harness_output,
-        "suite_summary_rc": 0,
+        "suite_summary_rc": 0 if suite_payload.get("tests_failed", 1) == 0 else 1,
         "suite_summary": suite_payload,
         "docker_runtime_ready": docker_ready,
         "docker_capability": capability.value,

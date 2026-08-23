@@ -97,6 +97,25 @@ from .docker_lifecycle import (
     run_synthetic_verifier_stage,
     temp_probe_dirs,
 )
+from .accounting import (
+    ACCOUNTING_SCHEMA_VERSION,
+    AccountingEventKind,
+    AccountingLedger,
+    CostLedgerEntry,
+    HumanInterventionRecord,
+    append_cost_entry,
+    append_human_intervention,
+    cost_ledger_event_count,
+    cost_ledger_head,
+    human_intervention_summary,
+    load_accounting_ledger,
+)
+from .recovery import (
+    RecoveryDecision,
+    RecoveryDisposition,
+    RecoverySnapshot,
+    classify_recovery,
+)
 from .control_plane import (
     AttemptIdentity,
     AttemptRecord,

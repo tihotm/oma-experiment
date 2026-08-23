@@ -386,9 +386,13 @@ def _load_control_policy_identity(payload: dict[str, Any] | None) -> ControlPoli
     )
 
 
-def write_control_record(path: str | Path, record: SupervisorControlRecord) -> Path:
+def write_control_record(path: str | Path, record: SupervisorControlRecord, *, expected_identity: str | None = None) -> Path:
     target = Path(path)
     target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists() and expected_identity is not None:
+        current = load_control_record(target)
+        if current is None or current.identity() != expected_identity:
+            raise ValueError("stale control record write rejected")
     tmp = target.with_suffix(target.suffix + ".tmp")
     payload = control_record_payload(record)
     content = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)

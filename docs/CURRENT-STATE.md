@@ -4,7 +4,7 @@ Canonical invariant registry:
 
 - [CANONICAL-INVARIANT-REGISTRY.md](CANONICAL-INVARIANT-REGISTRY.md)
 
-HEAD = `46cc437`
+HEAD = `cbfb308`
 
 Scientific state:
 
@@ -16,10 +16,10 @@ MEASURED_PRODUCT_EFFECT = NO
 
 Current implementation status:
 
-- `IMPLEMENTED`: Git-backed subject identity, materialization identity, execution context identity, verification context identity, scope policy identity, provenance anchor identity abstraction, expanded evidence model, canonical serialization, fail-closed schema parsing, explicit lifecycle state model, central acceptance gate, atomic evidence publication primitive, scope-control evaluation and acceptance composition, governance docs and policies
+- `IMPLEMENTED`: Git-backed subject identity, materialization identity, execution context identity, verification context identity, scope policy identity, provenance anchor identity abstraction, expanded evidence model, canonical serialization, fail-closed schema parsing, explicit lifecycle state model, central acceptance gate, atomic evidence publication primitive, scope-control evaluation and acceptance composition, governance docs and policies, cost ledger primitives, human intervention accounting primitives, replay-safe append-only accounting/evidence persistence, stale-writer CAS guards, recovery classification helpers
 - `PARTIAL`: provenance anchor composition, artifact/reference confusion boundary, false-DONE prevention, no-op acceptance boundary, some current-contract gaps from the audit
 - `EXECUTED`: synthetic Docker lifecycle harness probes with real container execution, explicit cleanup, quiescence guard, freeze-after-quiescence path, an independent two-stage Docker verifier lifecycle, and synthetic supervision state/budget/recovery control-plane tests
-- `MISSING`: real Codex execution, G0 measurement, cost ledger, human intervention accounting, concurrency lease/fencing/CAS, recovery engine, external-effect idempotency, distributed supervision
+- `MISSING`: real Codex execution, G0 measurement, external-effect idempotency, distributed supervision
 
 Current canonical test command:
 
@@ -32,11 +32,13 @@ Current discovered test count:
 
 Runtime observations:
 
-- current discovered test baseline is 163 cases across 10 `tests/test_*.py` modules
+- current discovered test baseline is 158 cases across 11 `tests/test_*.py` modules
 - offline control-plane coverage was expanded with `tests/test_control_plane_offline.py`
 - `load_control_record` now preserves current attempt state on reload
 - `tests/test_supervision_docker.py` now includes explicit runtime coverage for cross-run Docker isolation and oracle isolation across retries
 - `scripts/oma7-release-candidate-readiness.py` derives the release-candidate rehearsal facts without manual transcription and now avoids recursive suite execution during readiness
+- `src/oma7/accounting.py` now provides the canonical cost-ledger and human-intervention record primitives used by provenance inputs and accounting summaries
+- `src/oma7/recovery.py` now classifies persisted restart outcomes for control, evidence, accounting, and post-execution state
 - `host_docker_e2e.py` is the host-native orchestrator for the pending Docker campaign, with explicit stage-to-scenario mapping
 - restart recovery and persisted verification reuse are covered by unit and integration tests in `tests/test_supervision.py` and `tests/test_supervision_docker.py`
 - multi-attempt Docker supervision and active-container recovery scenarios are encoded; this session now has Docker runtime access and Docker-dependent tests execute here
