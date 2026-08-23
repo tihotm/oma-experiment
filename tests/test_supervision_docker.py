@@ -33,6 +33,7 @@ from oma7.control_plane import (
     update_budget_state,
 )
 from oma7.docker_lifecycle import (
+    DockerCapability,
     DockerContainerSpec,
     build_synthetic_acceptance_observation,
     docker_create,
@@ -45,6 +46,7 @@ from oma7.docker_lifecycle import (
     docker_stop,
     docker_context,
     docker_version,
+    docker_capability,
     docker_runtime_status,
     freeze_workspace_after_quiescence,
     materialize_verifier_copy,
@@ -94,8 +96,8 @@ def create_control_record(mission_id: str, run_id: str, budget) -> "oma7.control
 def _docker_available() -> bool:
     try:
         docker = docker_executable()
-        available, _ = docker_runtime_status(docker)
-        return available and docker_context(docker) is not None
+        capability, _ = docker_capability(docker)
+        return capability == DockerCapability.READY
     except Exception:
         return False
 

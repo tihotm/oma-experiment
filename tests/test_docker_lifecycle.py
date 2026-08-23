@@ -12,6 +12,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from oma7.docker_lifecycle import (
+    DockerCapability,
     DockerContainerSpec,
     SyntheticLifecycleResult,
     build_execution_context_identity,
@@ -28,6 +29,7 @@ from oma7.docker_lifecycle import (
     docker_stop,
     docker_context,
     docker_version,
+    docker_capability,
     docker_runtime_status,
     ensure_container_quiescent,
     freeze_workspace_after_quiescence,
@@ -50,8 +52,8 @@ PINNED_IMAGE = DEFAULT_CODEX_IMAGE_REF
 def _docker_available() -> bool:
     try:
         docker = docker_executable()
-        available, _ = docker_runtime_status(docker)
-        return available and docker_context(docker) is not None
+        capability, _ = docker_capability(docker)
+        return capability == DockerCapability.READY
     except Exception:
         return False
 
