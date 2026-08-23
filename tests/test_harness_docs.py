@@ -26,10 +26,20 @@ class HarnessDocsTests(unittest.TestCase):
         self.assertIn("docs/agent/INDEX.md", agents)
         self.assertIn("docs/agent/CURRENT-WORK.md", agents)
         self.assertIn("`docs/` is the system of record.", agents)
+        self.assertIn("docs/agent/OPERATING-CONTRACT.md", agents)
         self.assertIn("docs/SPEC.md", agents)
         self.assertIn("docs/INVARIANTS.md", agents)
         self.assertIn("docs/CURRENT-STATE.md", agents)
         self.assertIn("docs/ROADMAP.md", agents)
+
+    def test_operating_contract_contains_recurring_governance(self) -> None:
+        contract = (ROOT / "docs" / "agent" / "OPERATING-CONTRACT.md").read_text(encoding="utf-8")
+        self.assertIn("Authority order", contract)
+        self.assertIn("Autonomy", contract)
+        self.assertIn("Evidence and state", contract)
+        self.assertIn("Git and integration", contract)
+        self.assertIn("Boundaries and stopping", contract)
+        self.assertIn("Handoff", contract)
 
 
 if __name__ == "__main__":

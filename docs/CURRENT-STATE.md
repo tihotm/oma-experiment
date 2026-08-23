@@ -32,7 +32,7 @@ Current discovered test count:
 
 Runtime observations:
 
-- current discovered test baseline is 158 cases across 11 `tests/test_*.py` modules
+- current discovered test baseline is 159 cases across 11 `tests/test_*.py` modules
 - offline control-plane coverage was expanded with `tests/test_control_plane_offline.py`
 - `load_control_record` now preserves current attempt state on reload
 - `tests/test_supervision_docker.py` now includes explicit runtime coverage for cross-run Docker isolation and oracle isolation across retries

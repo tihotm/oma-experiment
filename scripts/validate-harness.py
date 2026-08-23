@@ -9,6 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 REQUIRED_FILES = (
     ROOT / "AGENTS.md",
     ROOT / "docs" / "agent" / "INDEX.md",
+    ROOT / "docs" / "agent" / "OPERATING-CONTRACT.md",
     ROOT / "docs" / "agent" / "CURRENT-WORK.md",
     ROOT / "docs" / "CURRENT-STATE.md",
     ROOT / "docs" / "INVARIANTS.md",
@@ -43,6 +44,7 @@ def main() -> int:
     checked = (
         ROOT / "AGENTS.md",
         ROOT / "docs" / "agent" / "INDEX.md",
+        ROOT / "docs" / "agent" / "OPERATING-CONTRACT.md",
         ROOT / "docs" / "agent" / "CURRENT-WORK.md",
         ROOT / "docs" / "CURRENT-STATE.md",
         ROOT / "docs" / "INVARIANTS.md",
