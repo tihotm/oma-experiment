@@ -41,6 +41,8 @@ class HarnessDocsTests(unittest.TestCase):
         self.assertIn("Default workflow: branch, commit, PR, CI, and merge.", contract)
         self.assertIn("Direct `push` to `origin/main` is allowed only when", contract)
         self.assertIn("Boundaries and stopping", contract)
+        self.assertIn("A missing CLI is a capability boundary, not an auth state.", contract)
+        self.assertIn("`codex login status` is only meaningful after the Codex CLI is locatable", contract)
         self.assertIn("Handoff", contract)
 
 

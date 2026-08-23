@@ -37,6 +37,8 @@ Use this order when resolving a task:
 ## Boundaries and stopping
 
 - Treat auth, Docker, and other external capabilities as boundaries, not success.
+- A missing CLI is a capability boundary, not an auth state.
+- `codex login status` is only meaningful after the Codex CLI is locatable by the supported host/runtime path.
 - Continue on independent work when a partial blocker exists.
 - Stop only at the first real external blocker that cannot be resolved in the repo or host session.
 
