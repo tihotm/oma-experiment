@@ -90,6 +90,8 @@ class RuntimePins:
 
 
 DEFAULT_CODEX_IMAGE_REF = "sha256:1d20675dba6987fd196f57c8be142683e6610ed2d72428c50ff5dfe2b758b381"
+DEFAULT_SANDBOX_COMMAND = ("python", "-m", "unittest", "discover", "-s", "tests", "-v")
+DEFAULT_SANDBOX_NETWORK = "none"
 DEFAULT_RUNTIME_PINS = RuntimePins(
     codex_sha256="6ee176b43f96b2294c8e2265d599f829e161b2c2ad34cb2b8fbf5f836fd34b8c",
     codex_version="0.1.0",
@@ -110,6 +112,12 @@ class SandboxPreflightConfig:
     pins: RuntimePins
     approval_noninteractive: bool
     automatic_escalation_disabled: bool
+    codex_home: Path | None = None
+    command: tuple[str, ...] = DEFAULT_SANDBOX_COMMAND
+    workdir: str = "/workspace"
+    network: str = DEFAULT_SANDBOX_NETWORK
+    mounts: tuple[tuple[Path, str, str], ...] = ()
+    environment: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -135,6 +143,13 @@ class SandboxPreflightResult:
     pins_valid: bool
     result: PreflightResult
     failure_reasons: tuple[str, ...]
+    codex_home: str
+    command: tuple[str, ...]
+    workdir: str
+    network: str
+    mounts: tuple[tuple[str, str, str], ...]
+    environment: tuple[str, ...]
+    execution_plan_identity: str
 
 
 @dataclass(frozen=True)
@@ -269,10 +284,44 @@ def _check_network_blocked() -> bool:
         return True
 
 
+def _check_mounts(mounts: tuple[tuple[Path, str, str], ...]) -> tuple[bool, str | None]:
+    seen: set[str] = set()
+    for host_path, container_path, mode in mounts:
+        if not host_path.is_absolute():
+            return False, f"host path is not absolute: {host_path}"
+        if not container_path or not container_path.startswith("/"):
+            return False, f"container path is not absolute: {container_path}"
+        if container_path in seen:
+            return False, f"duplicate mount target: {container_path}"
+        seen.add(container_path)
+        if mode not in {"", "ro", "rw"}:
+            return False, f"invalid mount mode: {mode}"
+    return True, None
+
+
+def _check_command(command: tuple[str, ...]) -> tuple[bool, str | None]:
+    if not command:
+        return False, "sandbox command missing"
+    if any(not part or part.isspace() for part in command):
+        return False, "sandbox command contains empty segment"
+    return True, None
+
+
 def run_sandbox_preflight(config: SandboxPreflightConfig) -> SandboxPreflightResult:
     failures: list[str] = []
     pins_valid = config.pins.is_valid()
     execution_context_id = execution_context_id_from_pins(config.pins) if pins_valid else None
+    codex_home = str((config.codex_home or (Path(tempfile.gettempdir()) / "oma7-ephemeral-codex-home")).resolve())
+    command_valid, command_reason = _check_command(config.command)
+    mounts_valid, mounts_reason = _check_mounts(config.mounts)
+    if not command_valid and command_reason:
+        failures.append(command_reason)
+    if not mounts_valid and mounts_reason:
+        failures.append(mounts_reason)
+    if not config.workdir or not config.workdir.startswith("/"):
+        failures.append("workdir is not absolute")
+    if not config.network:
+        failures.append("network policy missing")
     if not pins_valid:
         failures.append("pins invalid")
     workspace_write = _check_workspace_write(config.workspace)
@@ -297,6 +346,19 @@ def run_sandbox_preflight(config: SandboxPreflightConfig) -> SandboxPreflightRes
     if not pins_valid:
         failures.append("missing or mutable runtime pins")
     result = PreflightResult.PASS if not failures else PreflightResult.ENVIRONMENT_BLOCKED
+    mount_facts = tuple((str(host_path), container_path, mode) for host_path, container_path, mode in config.mounts)
+    plan_identity = _digest_payload(
+        {
+            "codex_home": codex_home,
+            "command": config.command,
+            "environment": config.environment,
+            "execution_context_id": execution_context_id,
+            "mounts": mount_facts,
+            "network": config.network,
+            "pins": config.pins,
+            "workdir": config.workdir,
+        }
+    )
     return SandboxPreflightResult(
         execution_context_id=execution_context_id,
         codex_version=config.pins.codex_version,
@@ -312,6 +374,13 @@ def run_sandbox_preflight(config: SandboxPreflightConfig) -> SandboxPreflightRes
         pins_valid=pins_valid,
         result=result,
         failure_reasons=tuple(failures),
+        codex_home=codex_home,
+        command=config.command,
+        workdir=config.workdir,
+        network=config.network,
+        mounts=mount_facts,
+        environment=config.environment,
+        execution_plan_identity=plan_identity,
     )
 
 

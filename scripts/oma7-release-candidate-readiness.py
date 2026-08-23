@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT / "src"))
 
 from oma7.docker_lifecycle import DockerCapability, docker_capability
 from oma7.codex_runtime import CodexCliCapability, CodexAuthStatus, probe_codex_runtime
+from oma7.host_portability import resolve_host_capability
 from oma7.preflight import DEFAULT_RUNTIME_PINS
 from oma7.release_candidate import build_default_release_candidate_readiness
 
@@ -97,10 +98,14 @@ def main() -> int:
 
     harness_rc, harness_output = _run_python_script(ROOT / "scripts" / "validate-harness.py")
     suite_payload = _discover_suite_summary()
-    capability, docker_reason = docker_capability()
+    host_capability = resolve_host_capability()
+    capability, docker_reason = docker_capability(host_capability.docker_cli_path)
     docker_ready = capability == DockerCapability.READY
     pinned_ready = capability == DockerCapability.READY
-    codex_runtime = probe_codex_runtime(code_home=os.environ.get("CODEX_HOME") or os.environ.get("OMA7_EPHEMERAL_CODEX_HOME"))
+    codex_runtime = probe_codex_runtime(
+        explicit_codex=host_capability.codex_cli_path,
+        code_home=os.environ.get("CODEX_HOME") or os.environ.get("OMA7_EPHEMERAL_CODEX_HOME"),
+    )
     host_rc, host_facts = _run_host_preflight()
 
     readiness = build_default_release_candidate_readiness(
@@ -119,6 +124,14 @@ def main() -> int:
         "docker_runtime_ready": docker_ready,
         "docker_capability": capability.value,
         "docker_runtime_reason": docker_reason,
+        "host_capability": {
+            "support": host_capability.support.value,
+            "codex_cli_path": host_capability.codex_cli_path,
+            "docker_cli_path": host_capability.docker_cli_path,
+            "codex_source": host_capability.codex_source,
+            "docker_source": host_capability.docker_source,
+            "blockers": host_capability.blockers,
+        },
         "pinned_codex_runtime_ready": pinned_ready,
         "host_preflight_rc": host_rc,
         "host_preflight": host_facts,
@@ -133,6 +146,12 @@ def main() -> int:
     _emit("DOCKER_RUNTIME_READY", docker_ready)
     _emit("DOCKER_CAPABILITY", capability.value)
     _emit("DOCKER_RUNTIME_REASON", docker_reason)
+    _emit("HOST_CAPABILITY_SUPPORT", host_capability.support.value)
+    _emit("HOST_CAPABILITY_BLOCKERS", ",".join(host_capability.blockers) if host_capability.blockers else "()")
+    _emit("HOST_CODEX_CLI_PATH", host_capability.codex_cli_path or "")
+    _emit("HOST_CODEX_CLI_SOURCE", host_capability.codex_source)
+    _emit("HOST_DOCKER_CLI_PATH", host_capability.docker_cli_path or "")
+    _emit("HOST_DOCKER_CLI_SOURCE", host_capability.docker_source)
     _emit("PINNED_CODEX_RUNTIME_READY", pinned_ready)
     _emit("CODEX_CLI_CAPABILITY", codex_runtime.cli_capability.value)
     _emit("CODEX_AUTH_STATUS", codex_runtime.auth_status.value)

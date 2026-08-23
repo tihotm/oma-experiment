@@ -18,6 +18,7 @@ from .scope import ProvenanceAnchorInputs, ScopeDecision, ScopePolicy, build_pro
 from .lifecycle import ControlledLifecycleObservation, GateStatus, LifecycleState, evaluate_acceptance
 from .models import Evidence, MaterializationIdentity, ResultStatus, ScopePolicyIdentity, SubjectIdentity, ProvenanceAnchorIdentity
 from .preflight import DEFAULT_CODEX_IMAGE_REF
+from .host_portability import resolve_docker_cli_path
 
 
 DEFAULT_DOCKER_CLI_CANDIDATES = (
@@ -151,27 +152,9 @@ class VerificationStageResult:
 
 
 def docker_executable(explicit: str | None = None) -> str:
-    if explicit:
-        return explicit
-    env_path = os.environ.get("DOCKER_CLI_PATH")
-    if env_path:
-        return env_path
-    from shutil import which
-
-    discovered = which("docker")
-    if discovered:
-        return discovered
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if local_app_data:
-        for candidate in (
-            Path(local_app_data) / "Programs" / "DockerDesktop" / "resources" / "bin" / "docker.exe",
-            Path(local_app_data) / "Programs" / "Docker Desktop" / "resources" / "bin" / "docker.exe",
-        ):
-            if candidate.exists():
-                return str(candidate)
-    for candidate in DEFAULT_DOCKER_CLI_CANDIDATES:
-        if Path(candidate).exists():
-            return candidate
+    resolved, _ = resolve_docker_cli_path(explicit)
+    if resolved:
+        return resolved
     raise FileNotFoundError("docker executable not found")
 
 

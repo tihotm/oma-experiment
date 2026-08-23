@@ -14,16 +14,26 @@ function Emit([string]$Key, [object]$Value) {
     Write-Output ("{0}={1}" -f $Key, $Value)
 }
 
+function Resolve-CliPath([string[]]$EnvNames, [string[]]$StandardPaths, [string]$UnavailableReason) {
+    foreach ($name in $EnvNames) {
+        $value = (Get-Item ("Env:{0}" -f $name) -ErrorAction SilentlyContinue).Value
+        if ($value) {
+            return [pscustomobject]@{ Ready = $true; Path = $value; Source = "env:$name"; Reason = 'explicit CLI path provided' }
+        }
+    }
+    foreach ($candidate in $StandardPaths) {
+        if (Test-Path -LiteralPath $candidate) {
+            return [pscustomobject]@{ Ready = $true; Path = $candidate; Source = "installed:$candidate"; Reason = 'standard install location' }
+        }
+    }
+    return [pscustomobject]@{ Ready = $false; Path = $null; Source = $null; Reason = $UnavailableReason }
+}
+
 function Test-CodexCli {
-    $explicit = if ($env:CODEX_CLI_PATH) { $env:CODEX_CLI_PATH } else { $null }
-    if ($explicit) {
-        return [pscustomobject]@{ Ready = $true; Path = $explicit; Reason = 'codex CLI path provided' }
-    }
-    $command = Get-Command codex -ErrorAction SilentlyContinue
-    if ($command) {
-        return [pscustomobject]@{ Ready = $true; Path = $command.Source; Reason = 'codex CLI found on PATH' }
-    }
-    return [pscustomobject]@{ Ready = $false; Path = $null; Reason = 'codex executable unavailable' }
+    Resolve-CliPath -EnvNames @('OMA7_CODEX_CLI_PATH', 'CODEX_CLI_PATH') -StandardPaths @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\Codex\codex.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\OpenAI Codex\codex.exe')
+    ) -UnavailableReason 'codex executable unavailable'
 }
 
 function Run-Command([string]$FilePath, [string[]]$Arguments, [hashtable]$Environment = $null) {
@@ -62,9 +72,19 @@ function New-DockerConfigDir {
     return $dir
 }
 
+function Test-DockerCli {
+    Resolve-CliPath -EnvNames @('OMA7_DOCKER_CLI_PATH', 'DOCKER_CLI_PATH') -StandardPaths @(
+        (Join-Path $env:LOCALAPPDATA 'Programs\DockerDesktop\resources\bin\docker.exe'),
+        (Join-Path $env:LOCALAPPDATA 'Programs\Docker Desktop\resources\bin\docker.exe'),
+        'C:\Program Files\Docker\Docker\resources\bin\docker.exe',
+        'C:\Program Files\Docker Desktop\resources\bin\docker.exe'
+    ) -UnavailableReason 'docker executable unavailable'
+}
+
 function Test-DockerRuntime {
+    param([string]$DockerPath)
     $dockerConfig = New-DockerConfigDir
-    $probe = Run-Command -FilePath 'docker' -Arguments @('--config', $dockerConfig, 'version')
+    $probe = Run-Command -FilePath $DockerPath -Arguments @('--config', $dockerConfig, 'version')
     if ($probe.ExitCode -ne 0) {
         $reason = if ($probe.Stderr) { $probe.Stderr } else { $probe.Stdout }
         return [pscustomobject]@{ Ready = $false; Reason = $reason }
@@ -73,14 +93,14 @@ function Test-DockerRuntime {
 }
 
 function Test-PinnedRuntime {
-    param([string]$Image)
+    param([string]$DockerPath, [string]$Image)
     $dockerConfig = New-DockerConfigDir
-    $inspect = Run-Command -FilePath 'docker' -Arguments @('--config', $dockerConfig, 'image', 'inspect', $Image)
+    $inspect = Run-Command -FilePath $DockerPath -Arguments @('--config', $dockerConfig, 'image', 'inspect', $Image)
     if ($inspect.ExitCode -ne 0) {
         $reason = if ($inspect.Stderr) { $inspect.Stderr } else { $inspect.Stdout }
         return [pscustomobject]@{ Ready = $false; Reason = $reason }
     }
-    $version = Run-Command -FilePath 'docker' -Arguments @('--config', $dockerConfig, 'run', '--rm', $Image, 'codex', '--version')
+    $version = Run-Command -FilePath $DockerPath -Arguments @('--config', $dockerConfig, 'run', '--rm', $Image, 'codex', '--version')
     if ($version.ExitCode -ne 0) {
         $reason = if ($version.Stderr) { $version.Stderr } else { $version.Stdout }
         return [pscustomobject]@{ Ready = $false; Reason = $reason }
@@ -90,7 +110,7 @@ function Test-PinnedRuntime {
 }
 
 function Test-CodexLoginStatus {
-    param([string]$Image, [string]$CodexHomePath)
+    param([string]$DockerPath, [string]$Image, [string]$CodexHomePath)
     New-Item -ItemType Directory -Force -Path $CodexHomePath | Out-Null
     $dockerConfig = New-DockerConfigDir
     $mount = "$($CodexHomePath):/codex-home"
@@ -98,7 +118,7 @@ function Test-CodexLoginStatus {
         HOME = '/codex-home'
         CODEX_HOME = '/codex-home'
     }
-    $probe = Run-Command -FilePath 'docker' -Arguments @('--config', $dockerConfig, 'run', '--rm', '-e', 'HOME=/codex-home', '-e', 'CODEX_HOME=/codex-home', '-v', $mount, $Image, 'codex', 'login', 'status') -Environment $envMap
+    $probe = Run-Command -FilePath $DockerPath -Arguments @('--config', $dockerConfig, 'run', '--rm', '-e', 'HOME=/codex-home', '-e', 'CODEX_HOME=/codex-home', '-v', $mount, $Image, 'codex', 'login', 'status') -Environment $envMap
     if ($probe.ExitCode -eq 0) {
         $detail = if ($probe.Stdout) { $probe.Stdout } else { 'codex login status ok' }
         return [pscustomobject]@{ Ready = $true; Status = 'AUTHENTICATED'; Detail = $detail }
@@ -121,8 +141,9 @@ function Test-CodexLoginStatusLocal {
     return [pscustomobject]@{ Ready = $false; Status = 'AUTH_NOT_READY'; Detail = $detail }
 }
 
-$docker = Test-DockerRuntime
-$runtime = if ($docker.Ready) { Test-PinnedRuntime -Image $PinnedImage } else { [pscustomobject]@{ Ready = $false; Reason = 'docker runtime unavailable' } }
+$dockerCli = Test-DockerCli
+$docker = if ($dockerCli.Ready) { Test-DockerRuntime -DockerPath $dockerCli.Path } else { [pscustomobject]@{ Ready = $false; Reason = 'docker executable unavailable' } }
+$runtime = if ($docker.Ready) { Test-PinnedRuntime -DockerPath $dockerCli.Path -Image $PinnedImage } else { [pscustomobject]@{ Ready = $false; Reason = 'docker runtime unavailable' } }
 $codexCli = Test-CodexCli
 
 Emit 'DOCKER_RUNTIME_READY' $docker.Ready
@@ -130,6 +151,12 @@ Emit 'PINNED_CODEX_RUNTIME_READY' $runtime.Ready
 Emit 'EPHEMERAL_CODEX_HOME' $CodexHome
 Emit 'CODEX_CLI_CAPABILITY' ($(if ($codexCli.Ready) { 'CLI_AVAILABLE' } else { 'CLI_ABSENT' }))
 Emit 'CODEX_CLI_REASON' $codexCli.Reason
+Emit 'HOST_CAPABILITY_SUPPORT' ($(if ($dockerCli.Ready -and $codexCli.Ready) { 'SUPPORTED' } else { 'BLOCKED' }))
+Emit 'HOST_DOCKER_CLI_PATH' ($dockerCli.Path)
+Emit 'HOST_DOCKER_CLI_SOURCE' ($dockerCli.Source)
+Emit 'HOST_CODEX_CLI_PATH' ($codexCli.Path)
+Emit 'HOST_CODEX_CLI_SOURCE' ($codexCli.Source)
+Emit 'HOST_CAPABILITY_BLOCKERS' ($(if ($dockerCli.Ready -and $codexCli.Ready) { '()' } else { @($dockerCli.Reason, $codexCli.Reason) -join ',' }))
 
 if (-not $docker.Ready -or -not $runtime.Ready) {
     Emit 'EPHEMERAL_CODEX_LOGIN_STATUS' 'UNAVAILABLE'

@@ -31,6 +31,7 @@ class ReleaseCandidateTests(unittest.TestCase):
         plan = build_release_candidate_plan(spec)
         self.assertEqual(plan.execution_context_id, spec.execution_context_identity.identity())
         self.assertEqual(plan.blocked_reasons, ())
+        self.assertEqual(plan.result.value, "READY")
 
     def test_release_candidate_readiness_script_emits_rehearsal_facts(self) -> None:
         result = subprocess.run(
@@ -46,6 +47,7 @@ class ReleaseCandidateTests(unittest.TestCase):
         self.assertIn("RC_ATTEMPT_CREATED=False", result.stdout)
         self.assertIn("RC_REAL_CODEX_EXEC=0", result.stdout)
         self.assertIn("RC_MISSION_PLAN_READY=True", result.stdout)
+        self.assertIn("RC_SANDBOX_PREFLIGHT=ENVIRONMENT_BLOCKED", result.stdout)
         self.assertIn("CODEX_AUTH_READY=False", result.stdout)
 
     def test_release_candidate_readiness_script_emits_json(self) -> None:
@@ -59,6 +61,7 @@ class ReleaseCandidateTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn('"auth_ready": false', result.stdout.lower())
         self.assertIn('"mission_plan_ready": true', result.stdout.lower())
+        self.assertIn('"sandbox_preflight": "environment_blocked"', result.stdout.lower())
         self.assertIn('"real_codex_exec": 0', result.stdout.lower())
 
     def test_release_candidate_readiness_distinguishes_codex_cli_absence(self) -> None:
@@ -72,6 +75,19 @@ class ReleaseCandidateTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn('"codex_cli_capability": "cli_absent"', result.stdout.lower())
         self.assertIn('"codex_auth_status": "not_probed"', result.stdout.lower())
+
+    def test_release_candidate_readiness_emits_sandbox_facts(self) -> None:
+        result = subprocess.run(
+            [sys.executable, str(ROOT / "scripts" / "oma7-release-candidate-readiness.py"), "--json"],
+            cwd=ROOT,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
+        self.assertIn('"sandbox_code_home":', result.stdout.lower())
+        self.assertIn('"sandbox_command":', result.stdout.lower())
+        self.assertIn('"sandbox_network": "none"', result.stdout.lower())
 
 
 if __name__ == "__main__":

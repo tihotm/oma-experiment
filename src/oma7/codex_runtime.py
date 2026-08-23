@@ -5,7 +5,8 @@ from enum import Enum
 import os
 import subprocess
 from pathlib import Path
-from shutil import which
+
+from .host_portability import resolve_codex_cli_path
 
 
 class CodexCliCapability(str, Enum):
@@ -37,23 +38,8 @@ class CodexRuntimeStatus:
 
 
 def codex_executable(explicit: str | None = None) -> str | None:
-    if explicit:
-        return explicit
-    env_path = os.environ.get("CODEX_CLI_PATH")
-    if env_path:
-        return env_path
-    discovered = which("codex")
-    if discovered:
-        return discovered
-    local_app_data = os.environ.get("LOCALAPPDATA")
-    if local_app_data:
-        for candidate in (
-            Path(local_app_data) / "Programs" / "Codex" / "codex.exe",
-            Path(local_app_data) / "Programs" / "OpenAI Codex" / "codex.exe",
-        ):
-            if candidate.exists():
-                return str(candidate)
-    return None
+    resolved, _ = resolve_codex_cli_path(explicit)
+    return resolved
 
 
 def codex_login_status(codex: str, *, code_home: str | None = None) -> tuple[bool, str]:

@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, asdict
 from hashlib import sha256
 import json
+import os
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -24,13 +26,16 @@ from .models import (
 )
 from .preflight import (
     DEFAULT_RUNTIME_PINS,
+    DEFAULT_SANDBOX_COMMAND,
     ProductionExecutionPlan,
     ProductionPreflightConfig,
     ProductionPreflightResult,
     RuntimePins,
+    SandboxPreflightConfig,
     execution_context_identity_from_pins,
     make_dry_run_plan,
     run_production_preflight,
+    run_sandbox_preflight,
 )
 from .git_identity import compute_git_tree_identity
 
@@ -62,6 +67,12 @@ class ReleaseCandidateReadiness:
     pinned_runtime_ready: bool
     auth_ready: bool
     mission_plan_ready: bool
+    sandbox_preflight: str
+    sandbox_execution_plan_id: str | None
+    sandbox_code_home: str
+    sandbox_command: tuple[str, ...]
+    sandbox_workdir: str
+    sandbox_network: str
     production_preflight: str
     attempt_created: bool
     retry_budget_consumed: bool
@@ -201,6 +212,20 @@ def build_release_candidate_readiness(
     spec = build_first_real_mission_spec(workspace, pins)
     control_record = build_release_candidate_control_record(spec)
     plan = build_release_candidate_plan(spec)
+    sandbox_result = run_sandbox_preflight(
+        SandboxPreflightConfig(
+            workspace=workspace,
+            pins=pins,
+            approval_noninteractive=True,
+            automatic_escalation_disabled=True,
+            codex_home=Path(os.environ.get("CODEX_HOME") or os.environ.get("OMA7_EPHEMERAL_CODEX_HOME") or Path(tempfile.gettempdir()) / "oma7-ephemeral-codex-home"),
+            command=DEFAULT_SANDBOX_COMMAND,
+            workdir="/workspace",
+            network="none",
+            mounts=((workspace, "/workspace", "rw"),),
+            environment=(),
+        )
+    )
     preflight_result = run_production_preflight(
         ProductionPreflightConfig(workspace=workspace, pins=pins, control_record=control_record)
     )
@@ -211,6 +236,12 @@ def build_release_candidate_readiness(
         pinned_runtime_ready=pinned_runtime_ready,
         auth_ready=auth_ready,
         mission_plan_ready=plan.result == ProductionPreflightResult.READY,
+        sandbox_preflight=sandbox_result.result.value,
+        sandbox_execution_plan_id=sandbox_result.execution_plan_identity,
+        sandbox_code_home=sandbox_result.codex_home,
+        sandbox_command=sandbox_result.command,
+        sandbox_workdir=sandbox_result.workdir,
+        sandbox_network=sandbox_result.network,
         production_preflight=preflight_result.value,
         attempt_created=False,
         retry_budget_consumed=False,

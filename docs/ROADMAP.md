@@ -10,8 +10,13 @@
 1. Provenance/cost/human accounting
 1. Recovery/idempotency/concurrency
 1. real implementation audit
+1. Host capability portability
 1. Codex sandbox preflight
 1. first real G0
+
+Host capability portability covers explicit selection and validation of a
+supported host context for Codex CLI and Docker capability without depending on
+PATH discovery as authoritative state.
 
 Identity/evidence foundation is complete only to the extent supported by current code/tests at HEAD `8130ac1`.
 

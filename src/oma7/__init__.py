@@ -105,6 +105,13 @@ from .codex_runtime import (
     codex_login_status,
     probe_codex_runtime,
 )
+from .host_portability import (
+    HostCapabilityProbe,
+    HostCapabilitySupport,
+    resolve_codex_cli_path,
+    resolve_docker_cli_path,
+    resolve_host_capability,
+)
 from .accounting import (
     ACCOUNTING_SCHEMA_VERSION,
     AccountingEventKind,

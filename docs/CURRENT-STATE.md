@@ -4,7 +4,7 @@ Canonical invariant registry:
 
 - [CANONICAL-INVARIANT-REGISTRY.md](CANONICAL-INVARIANT-REGISTRY.md)
 
-HEAD = `cbfb308`
+HEAD = `8c870ca`
 
 Scientific state:
 
@@ -32,7 +32,7 @@ Current discovered test count:
 
 Runtime observations:
 
-- current discovered test baseline is 163 cases across 12 `tests/test_*.py` modules
+- current discovered test baseline is 169 cases across 14 `tests/test_*.py` modules
 - offline control-plane coverage was expanded with `tests/test_control_plane_offline.py`
 - `load_control_record` now preserves current attempt state on reload
 - `tests/test_supervision_docker.py` now includes explicit runtime coverage for cross-run Docker isolation and oracle isolation across retries
@@ -40,11 +40,16 @@ Runtime observations:
 - `src/oma7/accounting.py` now provides the canonical cost-ledger and human-intervention record primitives used by provenance inputs and accounting summaries
 - `src/oma7/recovery.py` now classifies persisted restart outcomes for control, evidence, accounting, and post-execution state
 - `src/oma7/codex_runtime.py` now separates Codex CLI availability from auth readiness in executable code
+- `src/oma7/host_portability.py` now resolves an explicit supported host context for Codex CLI and Docker without treating PATH discovery as authoritative
+- Host Capability Provisioning is documented as an external boundary, not an OMA7 software milestone
+- `src/oma7/preflight.py` now carries a canonical Codex sandbox preflight contract with typed command, mounts, workdir, network policy, ephemeral `CODEX_HOME`, and execution-plan identity
 - `host_docker_e2e.py` is the host-native orchestrator for the pending Docker campaign, with explicit stage-to-scenario mapping
 - restart recovery and persisted verification reuse are covered by unit and integration tests in `tests/test_supervision.py` and `tests/test_supervision_docker.py`
 - multi-attempt Docker supervision and active-container recovery scenarios are encoded; this session now has Docker runtime access and Docker-dependent tests execute here
 - the reproducible release candidate branch was merged back to `main` as `46cc437`
 - production Docker execution should be exercised from an authorized host Python process context using the same `src/oma7/` code and the same `tests/`
+- host capability portability is now represented as a documented milestone and is validated by explicit host-context selection tests
+- Codex sandbox preflight is now documented and implemented; this runner reports it as `ENVIRONMENT_BLOCKED`
 - CODEX auth remains pending; synthetic supervision is not G0
 
 This file records factual state only.
