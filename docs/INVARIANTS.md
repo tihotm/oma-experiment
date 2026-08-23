@@ -1,5 +1,9 @@
 # Invariant Registry
 
+Canonical 1:1 registry:
+
+- [CANONICAL-INVARIANT-REGISTRY.md](CANONICAL-INVARIANT-REGISTRY.md)
+
 Current registry is versioned here. IDs MUST remain stable.
 
 Format per entry:
@@ -580,7 +584,7 @@ I71
 - Related implementation/tests if known: tests/test_oma7_core.py
 
 I72
-- Statement: provenance anchor/root mismatch invalidates acceptance.
+- Statement: provenance anchor/root mismatch invalidates acceptance. [legacy, non-canonical; see I30]
 - Origin / rationale: provenance binding
 - Current evidence level: TEST_CONFIRMED
 - Implementation status: PARTIAL
