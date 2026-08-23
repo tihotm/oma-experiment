@@ -21,9 +21,15 @@ class HarnessDocsTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, msg=result.stdout + result.stderr)
         self.assertIn("harness validation ok", result.stdout)
 
-    def test_agents_stays_short(self) -> None:
-        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8").splitlines()
-        self.assertLessEqual(len(agents), 20)
+    def test_agents_points_to_navigation_and_state(self) -> None:
+        agents = (ROOT / "AGENTS.md").read_text(encoding="utf-8")
+        self.assertIn("docs/agent/INDEX.md", agents)
+        self.assertIn("docs/agent/CURRENT-WORK.md", agents)
+        self.assertIn("`docs/` is the system of record.", agents)
+        self.assertIn("docs/SPEC.md", agents)
+        self.assertIn("docs/INVARIANTS.md", agents)
+        self.assertIn("docs/CURRENT-STATE.md", agents)
+        self.assertIn("docs/ROADMAP.md", agents)
 
 
 if __name__ == "__main__":

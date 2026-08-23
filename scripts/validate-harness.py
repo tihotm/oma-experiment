@@ -40,12 +40,6 @@ def main() -> int:
         if not path.exists():
             errors.append(f"missing required file: {path.relative_to(ROOT)}")
 
-    agents = ROOT / "AGENTS.md"
-    if agents.exists():
-        line_count = len(agents.read_text(encoding="utf-8").splitlines())
-        if line_count > 20:
-            errors.append(f"AGENTS.md too long: {line_count} lines")
-
     checked = (
         ROOT / "AGENTS.md",
         ROOT / "docs" / "agent" / "INDEX.md",

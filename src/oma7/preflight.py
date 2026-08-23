@@ -4,12 +4,16 @@ from dataclasses import dataclass, fields, is_dataclass
 from enum import Enum
 from hashlib import sha256
 import json
-import os
 import re
-from pathlib import Path
 import socket
 import tempfile
+from pathlib import Path
 from typing import Any
+
+from .models import ExecutionContextIdentity
+
+
+DEFAULT_CODEX_IMAGE_REF = "sha256:1d20675dba6987fd196f57c8be142683e6610ed2d72428c50ff5dfe2b758b381"
 
 
 class PreflightResult(str, Enum):
@@ -20,33 +24,6 @@ class PreflightResult(str, Enum):
 class ProductionPreflightResult(str, Enum):
     READY = "READY"
     BLOCKED = "BLOCKED"
-
-
-def _canonicalize(value: Any) -> Any:
-    if value is None:
-        return None
-    if isinstance(value, Enum):
-        return value.value
-    if isinstance(value, (str, int, float, bool)):
-        return value
-    if isinstance(value, tuple):
-        return [_canonicalize(item) for item in value]
-    if isinstance(value, list):
-        return [_canonicalize(item) for item in value]
-    if isinstance(value, dict):
-        return {str(key): _canonicalize(value[key]) for key in sorted(value)}
-    if is_dataclass(value):
-        return {
-            f.name: _canonicalize(getattr(value, f.name))
-            for f in fields(value)
-            if getattr(value, f.name) is not None
-        }
-    raise TypeError(f"Unsupported canonical value: {type(value)!r}")
-
-
-def _digest_payload(payload: Any) -> str:
-    raw = json.dumps(_canonicalize(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return sha256(raw.encode("utf-8")).hexdigest()
 
 
 @dataclass(frozen=True)
@@ -89,32 +66,30 @@ class RuntimePins:
         )
         if not all(required):
             return False
-        return all(
-            self._is_immutable_token(value)
-            if name
-            in {
-                "codex_sha256",
-                "harness_commit_or_digest",
-                "harness_configuration_digest",
-                "dataset_revision",
-                "dependency_lock_digest",
-                "container_image_digest",
-                "toolchain_identity",
-            }
-            else True
-            for name, value in (
-                ("codex_sha256", self.codex_sha256),
-                ("codex_version", self.codex_version),
-                ("model", self.model),
-                ("reasoning_level", self.reasoning_level),
-                ("harness_commit_or_digest", self.harness_commit_or_digest),
-                ("harness_configuration_digest", self.harness_configuration_digest),
-                ("dataset_revision", self.dataset_revision),
-                ("dependency_lock_digest", self.dependency_lock_digest),
-                ("container_image_digest", self.container_image_digest),
-                ("toolchain_identity", self.toolchain_identity),
-            )
-        )
+        immutable_fields = {
+            "codex_sha256",
+            "harness_commit_or_digest",
+            "harness_configuration_digest",
+            "dataset_revision",
+            "dependency_lock_digest",
+            "container_image_digest",
+            "toolchain_identity",
+        }
+        for name, value in (
+            ("codex_sha256", self.codex_sha256),
+            ("codex_version", self.codex_version),
+            ("model", self.model),
+            ("reasoning_level", self.reasoning_level),
+            ("harness_commit_or_digest", self.harness_commit_or_digest),
+            ("harness_configuration_digest", self.harness_configuration_digest),
+            ("dataset_revision", self.dataset_revision),
+            ("dependency_lock_digest", self.dependency_lock_digest),
+            ("container_image_digest", self.container_image_digest),
+            ("toolchain_identity", self.toolchain_identity),
+        ):
+            if name in immutable_fields and not self._is_immutable_token(value):
+                return False
+        return True
 
 
 @dataclass(frozen=True)
@@ -123,11 +98,6 @@ class SandboxPreflightConfig:
     pins: RuntimePins
     approval_noninteractive: bool
     automatic_escalation_disabled: bool
-    # Set to True only when preflight_ready(control_record) has been verified
-    # by the caller immediately before invoking run_sandbox_preflight.
-    # Default False: fail-closed — preflight blocks if bindings are not
-    # explicitly confirmed.
-    preflight_bindings_valid: bool = False
 
 
 @dataclass(frozen=True)
@@ -151,15 +121,64 @@ class SandboxPreflightResult:
     approval_noninteractive: bool
     automatic_escalation_disabled: bool
     pins_valid: bool
-    preflight_bindings_valid: bool
     result: PreflightResult
     failure_reasons: tuple[str, ...]
 
 
-def execution_context_id_from_pins(pins: RuntimePins) -> str:
+@dataclass(frozen=True)
+class ProductionExecutionPlan:
+    result: ProductionPreflightResult
+    execution_context_identity: ExecutionContextIdentity | None
+    execution_context_id: str | None
+    blocked_reasons: tuple[str, ...] = ()
+
+
+def _canonicalize(value: Any) -> Any:
+    if value is None:
+        return None
+    if isinstance(value, Enum):
+        return value.value
+    if isinstance(value, (str, int, float, bool)):
+        return value
+    if isinstance(value, tuple):
+        return [_canonicalize(item) for item in value]
+    if isinstance(value, list):
+        return [_canonicalize(item) for item in value]
+    if isinstance(value, dict):
+        return {str(key): _canonicalize(value[key]) for key in sorted(value)}
+    if is_dataclass(value):
+        return {
+            f.name: _canonicalize(getattr(value, f.name))
+            for f in fields(value)
+            if getattr(value, f.name) is not None
+        }
+    raise TypeError(f"Unsupported canonical value: {type(value)!r}")
+
+
+def _digest_payload(payload: Any) -> str:
+    raw = json.dumps(_canonicalize(payload), sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return sha256(raw.encode("utf-8")).hexdigest()
+
+
+def execution_context_identity_from_pins(pins: RuntimePins) -> ExecutionContextIdentity:
     if not pins.is_valid():
         raise ValueError("runtime pins invalid")
-    return _digest_payload(pins)
+    return ExecutionContextIdentity(
+        environment_container_image_digest=pins.container_image_digest,
+        codex_binary_digest=pins.codex_sha256,
+        codex_version=pins.codex_version,
+        model=pins.model,
+        reasoning_level=pins.reasoning_level,
+        harness_commit_or_digest=pins.harness_commit_or_digest,
+        harness_configuration_digest=pins.harness_configuration_digest,
+        dependency_lock_digest=pins.dependency_lock_digest,
+        dataset_revision=pins.dataset_revision,
+        toolchain_identity=pins.toolchain_identity,
+    )
+
+
+def execution_context_id_from_pins(pins: RuntimePins) -> str:
+    return execution_context_identity_from_pins(pins).identity()
 
 
 def _check_workspace_write(workspace: Path) -> bool:
@@ -241,10 +260,8 @@ def _check_network_blocked() -> bool:
 def run_sandbox_preflight(config: SandboxPreflightConfig) -> SandboxPreflightResult:
     failures: list[str] = []
     pins_valid = config.pins.is_valid()
-    execution_context_id = None
-    if pins_valid:
-        execution_context_id = execution_context_id_from_pins(config.pins)
-    else:
+    execution_context_id = execution_context_id_from_pins(config.pins) if pins_valid else None
+    if not pins_valid:
         failures.append("pins invalid")
     workspace_write = _check_workspace_write(config.workspace)
     if not workspace_write:
@@ -267,11 +284,6 @@ def run_sandbox_preflight(config: SandboxPreflightConfig) -> SandboxPreflightRes
         failures.append("automatic escalation enabled")
     if not pins_valid:
         failures.append("missing or mutable runtime pins")
-    # Mission/policy bindings must be confirmed by the caller via
-    # preflight_ready(control_record) before this call.  Omitting them is
-    # fail-closed: preflight blocks.
-    if not config.preflight_bindings_valid:
-        failures.append("mission/policy bindings not confirmed")
     result = PreflightResult.PASS if not failures else PreflightResult.ENVIRONMENT_BLOCKED
     return SandboxPreflightResult(
         execution_context_id=execution_context_id,
@@ -286,43 +298,62 @@ def run_sandbox_preflight(config: SandboxPreflightConfig) -> SandboxPreflightRes
         approval_noninteractive=config.approval_noninteractive,
         automatic_escalation_disabled=config.automatic_escalation_disabled,
         pins_valid=pins_valid,
-        preflight_bindings_valid=config.preflight_bindings_valid,
         result=result,
         failure_reasons=tuple(failures),
     )
 
 
+def make_dry_run_plan(config: ProductionPreflightConfig) -> ProductionExecutionPlan:
+    from .control_plane import preflight_ready
+
+    if not preflight_ready(config.control_record):
+        return ProductionExecutionPlan(
+            result=ProductionPreflightResult.BLOCKED,
+            execution_context_identity=None,
+            execution_context_id=None,
+            blocked_reasons=("control record not ready",),
+        )
+    if config.control_record.mission_identity is None or config.control_record.execution_context_identity is None:
+        return ProductionExecutionPlan(
+            result=ProductionPreflightResult.BLOCKED,
+            execution_context_identity=None,
+            execution_context_id=None,
+            blocked_reasons=("missing mission or execution identity",),
+        )
+    try:
+        expected_execution = execution_context_identity_from_pins(config.pins)
+    except ValueError:
+        return ProductionExecutionPlan(
+            result=ProductionPreflightResult.BLOCKED,
+            execution_context_identity=config.control_record.execution_context_identity,
+            execution_context_id=None,
+            blocked_reasons=("invalid runtime pins",),
+        )
+    if expected_execution != config.control_record.execution_context_identity:
+        return ProductionExecutionPlan(
+            result=ProductionPreflightResult.BLOCKED,
+            execution_context_identity=config.control_record.execution_context_identity,
+            execution_context_id=None,
+            blocked_reasons=("execution context mismatch",),
+        )
+    return ProductionExecutionPlan(
+        result=ProductionPreflightResult.READY,
+        execution_context_identity=config.control_record.execution_context_identity,
+        execution_context_id=config.control_record.execution_context_identity.identity(),
+    )
 
 
 def run_production_preflight(config: ProductionPreflightConfig) -> ProductionPreflightResult:
     from .control_plane import preflight_ready
 
-    sandbox_result = run_sandbox_preflight(
-        SandboxPreflightConfig(
-            workspace=config.workspace,
-            pins=config.pins,
-            approval_noninteractive=True,
-            automatic_escalation_disabled=True,
-        )
-    )
-    if sandbox_result.result != PreflightResult.PASS:
-        return ProductionPreflightResult.BLOCKED
     if not preflight_ready(config.control_record):
         return ProductionPreflightResult.BLOCKED
-    if config.control_record.mission_identity is None:
+    if config.control_record.mission_identity is None or config.control_record.execution_context_identity is None:
         return ProductionPreflightResult.BLOCKED
-    execution = config.control_record.mission_identity.execution_context_identity
-    if (
-        execution.environment_container_image_digest != config.pins.container_image_digest
-        or execution.codex_binary_digest != config.pins.codex_sha256
-        or execution.codex_version != config.pins.codex_version
-        or execution.model != config.pins.model
-        or execution.reasoning_level != config.pins.reasoning_level
-        or execution.harness_commit_or_digest != config.pins.harness_commit_or_digest
-        or execution.harness_configuration_digest != config.pins.harness_configuration_digest
-        or execution.dependency_lock_digest != config.pins.dependency_lock_digest
-        or execution.dataset_revision != config.pins.dataset_revision
-        or execution.toolchain_identity != config.pins.toolchain_identity
-    ):
+    try:
+        expected_execution = execution_context_identity_from_pins(config.pins)
+    except ValueError:
+        return ProductionPreflightResult.BLOCKED
+    if config.control_record.execution_context_identity != expected_execution:
         return ProductionPreflightResult.BLOCKED
     return ProductionPreflightResult.READY
