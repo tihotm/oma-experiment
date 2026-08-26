@@ -13,7 +13,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from oma7.docker_lifecycle import DockerCapability, docker_capability
-from oma7.codex_runtime import CodexCliCapability, CodexAuthStatus, probe_codex_runtime
+from oma7.codex_runtime import CodexCliCapability, CodexAuthStatus, run_host_codex_preflight_probe
 from oma7.host_portability import resolve_host_capability
 from oma7.preflight import DEFAULT_RUNTIME_PINS
 from oma7.release_candidate import build_default_release_candidate_readiness
@@ -102,9 +102,10 @@ def main() -> int:
     capability, docker_reason = docker_capability(host_capability.docker_cli_path)
     docker_ready = capability == DockerCapability.READY
     pinned_ready = capability == DockerCapability.READY
-    codex_runtime = probe_codex_runtime(
-        explicit_codex=host_capability.codex_cli_path,
+    codex_runtime = run_host_codex_preflight_probe(
+        preflight_script=str(ROOT / "scripts" / "host-codex-preflight.ps1"),
         code_home=os.environ.get("CODEX_HOME") or os.environ.get("OMA7_EPHEMERAL_CODEX_HOME"),
+        cwd=str(ROOT),
     )
     host_rc, host_facts = _run_host_preflight()
 
@@ -121,6 +122,11 @@ def main() -> int:
         "harness_validation_output": harness_output,
         "suite_summary_rc": 0 if suite_payload.get("tests_failed", 1) == 0 else 1,
         "suite_summary": suite_payload,
+        "codex_cli_capability": codex_runtime.facts.get("CODEX_CLI_CAPABILITY", "CLI_ABSENT"),
+        "codex_auth_status": codex_runtime.facts.get("CODEX_AUTH_STATUS", "NOT_PROBED"),
+        "codex_auth_ready": codex_runtime.auth_ready,
+        "codex_cli_path": codex_runtime.facts.get("HOST_CODEX_CLI_PATH"),
+        "codex_cli_reason": codex_runtime.facts.get("CODEX_CLI_REASON"),
         "docker_runtime_ready": docker_ready,
         "docker_capability": capability.value,
         "docker_runtime_reason": docker_reason,
@@ -153,13 +159,13 @@ def main() -> int:
     _emit("HOST_DOCKER_CLI_PATH", host_capability.docker_cli_path or "")
     _emit("HOST_DOCKER_CLI_SOURCE", host_capability.docker_source)
     _emit("PINNED_CODEX_RUNTIME_READY", pinned_ready)
-    _emit("CODEX_CLI_CAPABILITY", codex_runtime.cli_capability.value)
-    _emit("CODEX_AUTH_STATUS", codex_runtime.auth_status.value)
+    _emit("CODEX_CLI_CAPABILITY", codex_runtime.facts.get("CODEX_CLI_CAPABILITY", "CLI_ABSENT"))
+    _emit("CODEX_AUTH_STATUS", codex_runtime.facts.get("CODEX_AUTH_STATUS", "NOT_PROBED"))
     _emit("CODEX_AUTH_READY", codex_runtime.auth_ready or host_facts.get("CODEX_AUTH_READY", "False") == "True")
-    if codex_runtime.executable is not None:
-        _emit("CODEX_CLI_EXE", codex_runtime.executable)
-    if codex_runtime.reason is not None:
-        _emit("CODEX_CLI_REASON", codex_runtime.reason)
+    if codex_runtime.facts.get("HOST_CODEX_CLI_PATH"):
+        _emit("CODEX_CLI_EXE", codex_runtime.facts.get("HOST_CODEX_CLI_PATH"))
+    if codex_runtime.facts.get("CODEX_CLI_REASON"):
+        _emit("CODEX_CLI_REASON", codex_runtime.facts.get("CODEX_CLI_REASON"))
     _emit("TESTS_DISCOVERED", suite_payload.get("tests_discovered", "UNKNOWN"))
     _emit("TESTS_EXECUTED", suite_payload.get("tests_executed", "UNKNOWN"))
     _emit("TESTS_SKIPPED", suite_payload.get("tests_skipped", "UNKNOWN"))

@@ -62,6 +62,7 @@ from .post_execution import (
     build_a1_record,
     build_g0_record,
     build_qualified_pair_record,
+    persist_canonical_execution_artifacts,
     provenance_chain_reconstructible,
 )
 from .snapshot import freeze_snapshot
@@ -165,6 +166,7 @@ from .release_candidate import (
     DEFAULT_SCOPE_BUDGET,
     DEFAULT_VERIFICATION_COMMAND,
     FirstRealMissionSpec,
+    ReleaseCandidateExecutionCapture,
     ReleaseCandidateReadiness,
     build_default_release_candidate_readiness,
     build_first_real_mission_spec,

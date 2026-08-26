@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, asdict, field
 from hashlib import sha256
 import json
 import os
@@ -10,15 +10,19 @@ from typing import Any
 
 from .control_plane import (
     ControlPolicyIdentity,
+    AttemptIdentity,
     RetryBudget,
     SupervisorControlRecord,
     create_control_record,
     control_policy_identity_from_policy,
 )
+from .post_execution import PersistedExecutionArtifacts, persist_canonical_execution_artifacts
 from .models import (
     ExecutionContextIdentity,
     MaterializationIdentity,
     MissionIdentity,
+    Evidence,
+    ResultStatus,
     ScopePolicyIdentity,
     SubjectIdentity,
     VerificationContextIdentity,
@@ -38,11 +42,13 @@ from .preflight import (
     run_sandbox_preflight,
 )
 from .git_identity import compute_git_tree_identity
+from .scope import ProvenanceAnchorInputs, ScopeDecision, build_provenance_anchor
 
 
 DEFAULT_HARNESS_BINDING_IDENTITY = "oma7-harness:release-candidate"
 DEFAULT_SCOPE_BUDGET = "mvp-first-real-g0"
 DEFAULT_VERIFICATION_COMMAND = "python -m unittest discover -s tests -v"
+REAL_EXECUTION_PREDICATE_KIND = "real-execution"
 
 
 @dataclass(frozen=True)
@@ -57,6 +63,22 @@ class FirstRealMissionSpec:
     control_policy_identity: ControlPolicyIdentity
     retry_budget: RetryBudget
     harness_binding_identity: str = DEFAULT_HARNESS_BINDING_IDENTITY
+
+
+@dataclass(frozen=True)
+class ReleaseCandidateExecutionCapture:
+    attempt_identity: AttemptIdentity
+    mission_identity: MissionIdentity
+    subject_identity: SubjectIdentity
+    materialization_identity: MaterializationIdentity
+    execution_context_identity: ExecutionContextIdentity
+    verification_context_identity: VerificationContextIdentity
+    scope_policy_identity: ScopePolicyIdentity
+    predicate: dict[str, Any]
+    execution_facts: dict[str, Any] = field(default_factory=dict)
+    verification_facts: dict[str, Any] = field(default_factory=dict)
+    provenance_anchor_identity: ProvenanceAnchorIdentity | None = None
+    verifier_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -87,6 +109,143 @@ class ReleaseCandidateReadiness:
         data = asdict(self)
         data["workspace"] = str(self.workspace)
         return data
+
+
+def build_release_candidate_execution_evidence(
+    capture: ReleaseCandidateExecutionCapture,
+) -> Evidence:
+    if capture.predicate.get("kind") != REAL_EXECUTION_PREDICATE_KIND:
+        raise ValueError("release-candidate execution evidence requires real-execution predicate kind")
+    required_execution_facts = {
+        "run_id",
+        "attempt_id",
+        "evidence_root",
+        "codex_binary_digest",
+        "codex_version",
+        "model",
+        "reasoning_level",
+        "harness_commit_or_digest",
+        "harness_configuration_digest",
+        "dataset_revision",
+        "dependency_lock_digest",
+        "environment_container_image_digest",
+        "toolchain_identity",
+    }
+    missing_execution_facts = sorted(item for item in required_execution_facts if not capture.execution_facts.get(item))
+    if missing_execution_facts:
+        raise ValueError(f"release-candidate execution capture missing execution facts: {missing_execution_facts}")
+    required_verification_facts = {
+        "run_id",
+        "attempt_id",
+        "dataset_revision",
+        "oracle_test_patch_identity",
+        "harness_commit_or_digest",
+        "verification_configuration_digest",
+        "verifier_identity",
+    }
+    missing_verification_facts = sorted(item for item in required_verification_facts if not capture.verification_facts.get(item))
+    if missing_verification_facts:
+        raise ValueError(f"release-candidate execution capture missing verification facts: {missing_verification_facts}")
+    if capture.attempt_identity.execution_context_identity is None or capture.attempt_identity.subject_identity is None:
+        raise ValueError("release-candidate execution capture attempt identity is incomplete")
+    if capture.attempt_identity.run_id != capture.mission_identity.identity():
+        raise ValueError("release-candidate execution capture attempt does not bind to mission identity")
+    if capture.attempt_identity.execution_context_identity != capture.execution_context_identity:
+        raise ValueError("release-candidate execution capture attempt execution context mismatch")
+    if capture.attempt_identity.subject_identity != capture.subject_identity:
+        raise ValueError("release-candidate execution capture attempt subject mismatch")
+    if capture.execution_facts["run_id"] != capture.attempt_identity.run_id or capture.verification_facts["run_id"] != capture.attempt_identity.run_id:
+        raise ValueError("release-candidate execution capture run binding mismatch")
+    if capture.execution_facts["attempt_id"] != capture.attempt_identity.attempt_id or capture.verification_facts["attempt_id"] != capture.attempt_identity.attempt_id:
+        raise ValueError("release-candidate execution capture attempt binding mismatch")
+    expected_execution_context = ExecutionContextIdentity(
+        environment_container_image_digest=str(capture.execution_facts["environment_container_image_digest"]),
+        codex_binary_digest=str(capture.execution_facts["codex_binary_digest"]),
+        codex_version=str(capture.execution_facts["codex_version"]),
+        model=str(capture.execution_facts["model"]),
+        reasoning_level=str(capture.execution_facts["reasoning_level"]),
+        harness_commit_or_digest=str(capture.execution_facts["harness_commit_or_digest"]),
+        harness_configuration_digest=str(capture.execution_facts["harness_configuration_digest"]),
+        dependency_lock_digest=str(capture.execution_facts["dependency_lock_digest"]),
+        dataset_revision=str(capture.execution_facts["dataset_revision"]),
+        toolchain_identity=str(capture.execution_facts["toolchain_identity"]),
+    )
+    if expected_execution_context != capture.execution_context_identity:
+        raise ValueError("release-candidate execution capture execution context mismatch")
+    expected_mission_identity = compute_mission_identity(
+        subject_identity=capture.subject_identity,
+        materialization_identity=capture.materialization_identity,
+        execution_context_identity=capture.execution_context_identity,
+        scope_policy_identity=capture.scope_policy_identity,
+        verification_context_identity=capture.verification_context_identity,
+    )
+    if expected_mission_identity != capture.mission_identity:
+        raise ValueError("release-candidate execution capture mission identity mismatch")
+    if capture.verification_context_identity.dataset_revision != capture.verification_facts["dataset_revision"]:
+        raise ValueError("release-candidate execution capture verification dataset mismatch")
+    if capture.verification_context_identity.oracle_test_patch_identity != capture.verification_facts["oracle_test_patch_identity"]:
+        raise ValueError("release-candidate execution capture verification oracle patch mismatch")
+    if capture.verification_context_identity.harness_commit_or_digest != capture.verification_facts["harness_commit_or_digest"]:
+        raise ValueError("release-candidate execution capture verification harness mismatch")
+    if capture.verification_context_identity.verification_configuration_digest != capture.verification_facts["verification_configuration_digest"]:
+        raise ValueError("release-candidate execution capture verification digest mismatch")
+    if capture.verification_context_identity.verifier_identity != capture.verification_facts["verifier_identity"]:
+        raise ValueError("release-candidate execution capture verification context mismatch")
+    if (
+        capture.verification_context_identity.verifier_environment_image_digest is not None
+        and capture.verification_context_identity.verifier_environment_image_digest
+        != capture.execution_context_identity.environment_container_image_digest
+    ):
+        raise ValueError("release-candidate execution capture verification environment mismatch")
+    if capture.verifier_id is not None and capture.verifier_id != capture.verification_context_identity.verifier_identity:
+        raise ValueError("release-candidate execution capture verifier binding mismatch")
+    if capture.provenance_anchor_identity is None:
+        provenance = build_provenance_anchor(
+            ProvenanceAnchorInputs(
+                subject_identity=capture.subject_identity,
+                execution_context_identity=capture.execution_context_identity,
+                verification_context_identity=capture.verification_context_identity,
+                scope_policy_identity=capture.scope_policy_identity,
+                run_id=capture.attempt_identity.run_id,
+                verifier_id=capture.verifier_id or capture.verification_context_identity.verifier_identity or "oma7-first-real-g0-verifier",
+                cost_ledger_head=None,
+                cost_ledger_event_count=None,
+                scope_decision=ScopeDecision.ALLOW,
+                scope_change_id=f"release-candidate:{_digest(json.dumps(capture.predicate, sort_keys=True, separators=(',', ':'), ensure_ascii=False))}",
+            )
+        ).identity
+    else:
+        provenance = capture.provenance_anchor_identity
+    return Evidence(
+        subject_identity=capture.subject_identity,
+        materialization_identity=capture.materialization_identity,
+        execution_context_identity=capture.execution_context_identity,
+        verification_context_identity=capture.verification_context_identity,
+        scope_policy_identity=capture.scope_policy_identity,
+        provenance_anchor_identity=provenance,
+        result=ResultStatus.PASS,
+        verifier_id=capture.verification_context_identity.verifier_identity,
+        run_id=capture.attempt_identity.run_id,
+        predicate=capture.predicate,
+    )
+
+
+def persist_release_candidate_execution_artifacts(
+    *,
+    capture: ReleaseCandidateExecutionCapture,
+    accounting_cost_units: int = 1,
+    accounting_reason: str = "real-execution",
+) -> PersistedExecutionArtifacts:
+    if capture.predicate.get("kind") != REAL_EXECUTION_PREDICATE_KIND:
+        raise ValueError("release-candidate execution artifacts require real-execution predicate kind")
+    evidence = build_release_candidate_execution_evidence(capture)
+    return persist_canonical_execution_artifacts(
+        run_id=capture.attempt_identity.run_id,
+        evidence=evidence,
+        base_dir=Path(capture.execution_facts["evidence_root"]),
+        accounting_cost_units=accounting_cost_units,
+        accounting_reason=accounting_reason,
+    )
 
 
 def _digest(text: str) -> str:

@@ -15,8 +15,10 @@ from oma7 import (
     build_a1_record,
     build_g0_record,
     build_qualified_pair_record,
+    persist_canonical_execution_artifacts,
     provenance_chain_reconstructible,
 )
+from oma7.accounting import cost_ledger_event_count, cost_ledger_head, load_accounting_ledger
 from oma7.control_plane import (
     AttemptIdentity,
     FailureClassification,
@@ -25,7 +27,7 @@ from oma7.control_plane import (
     duplicate_execution_prevented,
     new_attempt_identity,
 )
-from oma7.evidence_ledger import append_post_execution_record, load_post_execution_records
+from oma7.evidence_ledger import append_post_execution_record, load_evidence, load_post_execution_records
 from oma7.lifecycle import (
     ControlledLifecycleObservation,
     DurableRunRecord,
@@ -47,8 +49,10 @@ from oma7.models import (
     ResultStatus,
     ScopePolicyIdentity,
     SubjectIdentity,
+    VerificationContextIdentity,
 )
 from oma7.preflight import RuntimePins, execution_context_identity_from_pins
+from oma7.scope import ProvenanceAnchorInputs, ScopeDecision, build_provenance_anchor
 
 
 class PostExecutionPipelineTests(unittest.TestCase):
@@ -234,6 +238,91 @@ class PostExecutionPipelineTests(unittest.TestCase):
             base = Path(tmp)
             publish_atomic_evidence(base / "evidence.json", self.evidence)
             self.assertIsNotNone(load_published_evidence(base / "evidence.json"))
+
+    def test_canonical_execution_artifacts_persist_evidence_accounting_and_enable_g0(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            base = Path(tmp)
+            verification = VerificationContextIdentity(
+                dataset_revision="rev-1",
+                oracle_test_patch_identity="oracle-1",
+                fail_to_pass=(),
+                pass_to_pass=(),
+                harness_commit_or_digest="h-1",
+                verification_configuration_digest="cfg-1",
+                verifier_environment_image_digest=self.execution.environment_container_image_digest,
+                verifier_identity="verifier-1",
+            )
+            provenance = build_provenance_anchor(
+                ProvenanceAnchorInputs(
+                    subject_identity=self.subject,
+                    execution_context_identity=self.execution,
+                    verification_context_identity=verification,
+                    scope_policy_identity=self.scope,
+                    run_id="run-1",
+                    verifier_id="verifier-1",
+                    cost_ledger_head="ledger-head",
+                    cost_ledger_event_count=1,
+                    scope_decision=ScopeDecision.ALLOW,
+                    scope_change_id="change-1",
+                )
+            ).identity
+            evidence = Evidence(
+                subject_identity=self.subject,
+                materialization_identity=self.materialization,
+                execution_context_identity=self.execution,
+                verification_context_identity=verification,
+                scope_policy_identity=self.scope,
+                provenance_anchor_identity=provenance,
+                result=ResultStatus.PASS,
+                verifier_id="verifier-1",
+                run_id="run-1",
+                predicate={"kind": "real-execution"},
+            )
+            artifacts = persist_canonical_execution_artifacts(
+                run_id="run-1",
+                evidence=evidence,
+                base_dir=base,
+                accounting_cost_units=3,
+                accounting_reason="execution",
+            )
+            evidence_path = base / "run-1.json"
+            self.assertTrue(evidence_path.exists())
+            self.assertIsNotNone(load_published_evidence(evidence_path))
+            evidence_ledger = load_evidence("run-1", base)
+            self.assertEqual(len(evidence_ledger), 1)
+            self.assertEqual(evidence_ledger[0].cost_ledger_event_count, 1)
+            self.assertEqual(cost_ledger_event_count("run-1", base), 1)
+            self.assertEqual(cost_ledger_head("run-1", base), artifacts.accounting_head)
+            self.assertEqual(load_accounting_ledger("run-1", base).event_count(), 1)
+            g0 = build_g0_record(
+                mission_identity=self.mission,
+                attempt_identity=self.attempt,
+                execution_context_identity=self.execution,
+                evidence=artifacts.evidence,
+            )
+            self.assertTrue(g0.is_eligible())
+
+    def test_fixture_or_synthetic_execution_evidence_is_not_g0_eligible(self) -> None:
+        synthetic = Evidence(
+            subject_identity=self.subject,
+            materialization_identity=self.materialization,
+            execution_context_identity=self.execution,
+            verification_context_identity=None,
+            scope_policy_identity=self.scope,
+            provenance_anchor_identity=None,
+            result=ResultStatus.PASS,
+            verifier_id="verifier-1",
+            run_id="run-1",
+            predicate={"kind": "host_docker_e2e"},
+        )
+        g0 = build_g0_record(
+            mission_identity=self.mission,
+            attempt_identity=self.attempt,
+            execution_context_identity=self.execution,
+            evidence=synthetic,
+        )
+        self.assertFalse(g0.is_eligible())
+        self.assertEqual(g0.result.state, QualificationState.EXECUTION_FAILED)
 
 
 if __name__ == "__main__":

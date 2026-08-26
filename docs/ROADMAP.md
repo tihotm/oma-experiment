@@ -35,6 +35,16 @@ Identity/evidence foundation is complete only to the extent supported by current
 
 Engineering availability does not justify causal experimental promotion.
 
+E0 baseline is implemented by the canonical experimental baseline report in
+`scripts/oma7-e0-baseline.py` and its supporting tests. E1 explicit acceptance
+pre-check / legitimate stop is implemented by the canonical acceptance-precheck
+report in `scripts/oma7-e1-acceptance-precheck.py` and its supporting tests.
+E1b matched deliberation is implemented by the canonical matched-deliberation
+report in `scripts/oma7-e1b-matched-deliberation.py` and its supporting tests.
+E2 independent verifier is implemented by the canonical independent-verifier
+report in `scripts/oma7-e2-independent-verifier.py` and its supporting tests.
+The next open experimental front is `E3 immutable submission + context evidence`.
+
 ## SKILL CANDIDATES
 
 - lot audit - `DEFERRED_PENDING_WORKFLOW_STABILITY`

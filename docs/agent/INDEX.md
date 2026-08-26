@@ -25,6 +25,10 @@ Versioned state:
 
 - [CURRENT-WORK.md](CURRENT-WORK.md) - current factual state and active blockers
 - [FIRST-REAL-MISSION.md](FIRST-REAL-MISSION.md) - canonical first real mission and release-candidate shape
+- [E0-BASELINE.md](E0-BASELINE.md) - canonical experimental baseline report and next-front boundary
+- [E1-ACCEPTANCE-PRECHECK.md](E1-ACCEPTANCE-PRECHECK.md) - canonical acceptance-precheck report and legitimate-stop boundary
+- [E1B-MATCHED-DELIBERATION.md](E1B-MATCHED-DELIBERATION.md) - canonical matched-deliberation report and matched-stop boundary
+- [E2-INDEPENDENT-VERIFIER.md](E2-INDEPENDENT-VERIFIER.md) - canonical independent-verifier report and matched-front boundary
 - [../CURRENT-STATE.md](../CURRENT-STATE.md) - stable repository state and counters
 - [../DECISIONS.md](../DECISIONS.md) - architectural decisions
 - [../ROADMAP.md](../ROADMAP.md) - active roadmap and staged scope

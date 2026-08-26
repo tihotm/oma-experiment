@@ -1,13 +1,22 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, fields, is_dataclass
+from dataclasses import dataclass, fields, is_dataclass, replace
 from enum import Enum
 from hashlib import sha256
 import json
+from pathlib import Path
 from typing import Any
 
 from .control_plane import AttemptIdentity
-from .lifecycle import ControlledLifecycleObservation
+from .accounting import (
+    AccountingEventKind,
+    append_cost_entry,
+    cost_ledger_event_count,
+    cost_ledger_head,
+    human_intervention_summary,
+)
+from .evidence_ledger import append_evidence
+from .lifecycle import ControlledLifecycleObservation, evidence_publication_payload, publish_atomic_evidence
 from .models import (
     ExecutionContextIdentity,
     Evidence,
@@ -18,6 +27,15 @@ from .models import (
 
 
 POST_EXECUTION_SCHEMA = "oma7.post-execution/v1"
+
+
+@dataclass(frozen=True)
+class PersistedExecutionArtifacts:
+    evidence: Evidence
+    evidence_path: str
+    accounting_head: str | None
+    accounting_event_count: int | None
+    post_execution_records: tuple[object, ...] = ()
 
 
 def _canonical(value: Any) -> Any:
@@ -73,6 +91,8 @@ class G0Record:
         if self.schema_version != POST_EXECUTION_SCHEMA:
             return False
         if self.result.result != ResultStatus.PASS:
+            return False
+        if self.evidence.predicate.get("kind") != "real-execution":
             return False
         if self.evidence.result != ResultStatus.PASS:
             return False
@@ -140,6 +160,8 @@ def evaluate_g0(
 ) -> G0Result:
     if attempt_identity.run_id != evidence.run_id:
         return G0Result(state=QualificationState.EXECUTION_FAILED, reason="run mismatch", result=ResultStatus.FAIL)
+    if evidence.predicate.get("kind") != "real-execution":
+        return G0Result(state=QualificationState.EXECUTION_FAILED, reason="synthetic or fixture evidence", result=ResultStatus.FAIL)
     if evidence.result != ResultStatus.PASS:
         return G0Result(state=QualificationState.EXECUTION_FAILED, reason="evidence not PASS", result=evidence.result)
     if evidence.execution_context_identity != execution_context_identity:
@@ -191,3 +213,52 @@ def build_qualified_pair_record(g0_record: G0Record, a1_record: A1Record) -> Qua
 def provenance_chain_reconstructible(g0_record: G0Record, a1_record: A1Record, qualified_pair: QualifiedPairRecord) -> bool:
     return g0_record.is_eligible() and a1_record.is_eligible() and qualified_pair.is_eligible()
 
+
+def persist_canonical_execution_artifacts(
+    *,
+    run_id: str,
+    evidence: Evidence,
+    base_dir: str | Path = "evidence",
+    accounting_cost_units: int | None = None,
+    accounting_reason: str = "execution",
+    accounting_kind: AccountingEventKind = AccountingEventKind.EXECUTION,
+) -> PersistedExecutionArtifacts:
+    base = Path(base_dir)
+    base.mkdir(parents=True, exist_ok=True)
+
+    if evidence.run_id is not None and evidence.run_id != run_id:
+        raise ValueError("evidence/run mismatch")
+
+    evidence_path = base / f"{run_id}.json"
+    if accounting_cost_units is not None:
+        append_cost_entry(
+            run_id,
+            cost_units=accounting_cost_units,
+            kind=accounting_kind,
+            reason=accounting_reason,
+            evidence_reference=str(evidence_path),
+            base_dir=base,
+        )
+
+    accounting_head = cost_ledger_head(run_id, base)
+    accounting_event_count = cost_ledger_event_count(run_id, base)
+    evidence_summary = human_intervention_summary(run_id, base)
+    normalized_evidence = replace(
+        evidence,
+        run_id=run_id,
+        cost_ledger_head=accounting_head,
+        cost_ledger_event_count=accounting_event_count,
+        human_intervention_summary=evidence.human_intervention_summary if evidence.human_intervention_summary is not None else evidence_summary,
+    )
+    if evidence.cost_ledger_head is not None and evidence.cost_ledger_head != accounting_head:
+        raise ValueError("evidence cost ledger head mismatch")
+    if evidence.cost_ledger_event_count is not None and evidence.cost_ledger_event_count != accounting_event_count:
+        raise ValueError("evidence cost ledger count mismatch")
+    publish_atomic_evidence(evidence_path, evidence_publication_payload(normalized_evidence))
+    append_evidence(run_id, normalized_evidence, base)
+    return PersistedExecutionArtifacts(
+        evidence=normalized_evidence,
+        evidence_path=str(evidence_path),
+        accounting_head=accounting_head,
+        accounting_event_count=accounting_event_count,
+    )

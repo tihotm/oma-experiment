@@ -23,6 +23,7 @@ from oma7.control_plane import (
     load_control_record,
     new_attempt_identity,
     record_attempt,
+    control_policy_identity_from_policy,
     write_control_record,
 )
 from oma7.docker_lifecycle import (
@@ -50,6 +51,7 @@ from oma7.lifecycle import AcceptanceOutcome, LifecycleState, evaluate_acceptanc
 from oma7.models import Evidence, ResultStatus, SubjectIdentity
 from oma7.scope import ProvenanceAnchorInputs, ScopeDecision, ScopePolicy, ScopeChange, ScopeOperation, ScopeObjectType, build_provenance_anchor, evaluate_scope_change
 from oma7.snapshot import freeze_snapshot
+from oma7.models import MaterializationIdentity, ScopePolicyIdentity, compute_mission_identity
 
 
 PINNED_IMAGE = "sha256:1d20675dba6987fd196f57c8be142683e6610ed2d72428c50ff5dfe2b758b381"
@@ -159,12 +161,43 @@ def _provenance(subject, verification, scope_identity, run_id: str, verifier_id:
     ).identity
 
 
+def _control_record(run_id: str, budget: RetryBudget):
+    subject = _subject("control")
+    materialization = MaterializationIdentity(subject_identity=subject, canonical_root_descriptor="git:root")
+    execution = _execution("control")
+    scope = _scope_identity("control")
+    mission = compute_mission_identity(
+        subject_identity=subject,
+        materialization_identity=materialization,
+        execution_context_identity=execution,
+        scope_policy_identity=scope,
+    )
+    policy = control_policy_identity_from_policy(
+        max_attempts=budget.max_attempts,
+        max_elapsed_time_seconds=budget.max_elapsed_time_seconds,
+        max_execution_time_per_attempt_seconds=budget.max_execution_time_per_attempt_seconds,
+        retryable_classifications=(),
+        non_retryable_classifications=(),
+        escalation_reasons=(),
+    )
+    return create_control_record(
+        run_id=run_id,
+        budget=budget,
+        mission_identity=mission,
+        control_policy_identity=policy,
+        harness_binding_identity="oma7-harness:release-candidate",
+        subject_identity=subject,
+        execution_context_identity=execution,
+        scope_policy_identity=scope,
+    )
+
+
 def _run_docker_probe(docker: str) -> StageResult:
-    probe = _run(docker, ["run", "--rm", PINNED_IMAGE, "sh", "-lc", "printf OMA7_CASE_E_OK"])
+    probe = _run(docker, ["run", "--rm", PINNED_IMAGE, "codex", "--version"])
     return StageResult(
         name="CASE_E",
         executed=True,
-        passed=probe.returncode == 0 and probe.stdout.strip() == "OMA7_CASE_E_OK",
+        passed=probe.returncode == 0 and bool(probe.stdout.strip()),
         discovered=1,
         run=1,
         failed=0 if probe.returncode == 0 else 1,
@@ -185,7 +218,7 @@ def _active_container_recovery() -> StageResult:
     (workspace / "result.txt").write_text("OMA7_SYNTHETIC_EXECUTOR_OK", encoding="utf-8")
     subprocess.run(["git", "add", "result.txt"], cwd=workspace, check=True, capture_output=True, text=True)
     subprocess.run(["git", "commit", "-m", "init"], cwd=workspace, check=True, capture_output=True, text=True)
-    control = create_control_record(mission_id="mission-1", run_id=run_id, budget=RetryBudget(2, 30, 10))
+    control = _control_record(run_id, RetryBudget(2, 30, 10))
     executor_spec = DockerContainerSpec(image_ref=PINNED_IMAGE, name=f"oma7-executor-{uuid.uuid4().hex[:8]}", workspace_host_path=workspace, readonly_host_path=readonly, network="none", labels=(("oma7.run_id", run_id), ("oma7.role", "executor")), command=("sh", "-lc", "sleep 3600"))
     executor_id = docker_create(docker, executor_spec, run_id=run_id)
     docker_start(docker, executor_id)
@@ -269,6 +302,11 @@ def _run_flake_repeatability(docker: str) -> StageResult:
         failed=failed_count,
         details="\n".join(details_lines)
     )
+
+
+def _publish_canonical_execution_artifacts(summary: dict[str, object]) -> None:
+    _emit("CANONICAL_EVIDENCE_PUBLISHED", False)
+    _emit("CANONICAL_PUBLISH_BLOCKER", "host_docker_e2e is not product execution evidence")
 
 def main() -> int:
     docker = None
@@ -380,6 +418,8 @@ def main() -> int:
         for key, value in summary.items():
             if key != "PROBE_CONTAINERS_AFTER_CLEANUP":
                 _emit(key, value)
+    if overall_ok:
+        _publish_canonical_execution_artifacts(summary)
     return 0 if overall_ok else 1
 
 

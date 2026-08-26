@@ -3,8 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 import os
+import subprocess
+import sys
 from pathlib import Path
 
+from .windows_cmd import build_windows_cmd_invocation
 
 class HostCapabilitySupport(str, Enum):
     SUPPORTED = "SUPPORTED"
@@ -29,10 +32,26 @@ def _candidate_from_env(*names: str) -> tuple[str, str] | None:
     return None
 
 
-def _candidate_from_standard_locations(candidates: tuple[Path, ...]) -> tuple[str, str] | None:
+def _probe_candidate_executable(candidate: Path) -> bool:
+    if sys.platform == "win32" and candidate.suffix.lower() in {".cmd", ".bat"}:
+        command = build_windows_cmd_invocation(str(candidate), ["--version"])
+    else:
+        command = [str(candidate), "--version"]
+    try:
+        completed = subprocess.run(command, capture_output=True, text=True, check=False)
+    except (FileNotFoundError, PermissionError, OSError):
+        return False
+    return completed.returncode == 0
+
+
+def _candidate_from_standard_locations(candidates: tuple[Path, ...], *, probe_when_permission_denied: bool = False) -> tuple[str, str] | None:
     for candidate in candidates:
-        if candidate.exists():
-            return str(candidate), f"installed:{candidate}"
+        try:
+            if candidate.exists():
+                return str(candidate), f"installed:{candidate}"
+        except PermissionError:
+            if probe_when_permission_denied and _probe_candidate_executable(candidate):
+                return str(candidate), f"installed:{candidate}"
     return None
 
 
@@ -42,6 +61,17 @@ def resolve_codex_cli_path(explicit: str | None = None) -> tuple[str | None, str
     env_candidate = _candidate_from_env("OMA7_CODEX_CLI_PATH", "CODEX_CLI_PATH")
     if env_candidate:
         return env_candidate
+    app_data = os.environ.get("APPDATA")
+    if app_data:
+        standard_candidate = _candidate_from_standard_locations(
+            (
+                Path(app_data) / "npm" / "codex.cmd",
+                Path(app_data) / "npm" / "codex",
+            ),
+            probe_when_permission_denied=True,
+        )
+        if standard_candidate:
+            return standard_candidate
     local_app_data = os.environ.get("LOCALAPPDATA")
     if local_app_data:
         standard_candidate = _candidate_from_standard_locations(
@@ -97,4 +127,3 @@ def resolve_host_capability(*, explicit_codex_cli: str | None = None, explicit_d
         support=support,
         blockers=tuple(blockers),
     )
-
